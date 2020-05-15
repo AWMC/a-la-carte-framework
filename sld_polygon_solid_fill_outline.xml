@@ -1,0 +1,21 @@
+<StyledLayerDescriptor version="1.0.0">
+<NamedLayer>
+<Name>rome_60</Name>
+<UserStyle>
+<Title>xxx</Title>
+<FeatureTypeStyle>
+<Rule>
+<PolygonSymbolizer>
+<Fill>
+<CssParameter name="fill">#ff0000</CssParameter>
+</Fill>
+<Stroke>
+<CssParameter name="stroke">#0000ff</CssParameter>
+<CssParameter name="stroke-width">2.0</CssParameter>
+</Stroke>
+</PolygonSymbolizer>
+</Rule>
+</FeatureTypeStyle>
+</UserStyle>
+</NamedLayer>
+</StyledLayerDescriptor>

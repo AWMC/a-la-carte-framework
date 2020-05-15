@@ -1,0 +1,439 @@
+body {
+    margin: 0px;
+    padding: 0px;
+    background: #333;
+    font-family: GentiumAlt, "Palatino Linotype", "Times New Roman", Times, serif;
+    font-size: 1em;
+    text-indent: 0em;
+}
+
+
+#noticehead {
+    position: relative;
+        left: 5%;
+        width: 90%;
+    margin: 0px;
+    padding: 0px;
+    background: #333;
+    color: white;
+    font-size: 0.8em;
+    text-indent: 0px;
+}
+
+        #noticehead a, a:link, a:visited {
+            color: #9cf;
+            text-decoration: underline;
+        }
+        
+        #noticehead a:hover {
+            text-decoration: none;
+        }
+        
+
+#pagecontent {
+    position: relative;
+        left: 5%;
+        width: 90%;
+    margin: 0px;
+    margin-bottom: 0.8em;
+    padding: 3px;
+    background: white;
+    border-style:solid;
+border-color:#C1CEE3;
+
+}
+
+#header {
+    min-height: 106px;
+    margin: 0px;
+    padding: 0px;
+    background: #036;
+    border-bottom: solid white 3px;
+}
+
+#banner {
+    margin: 0px;
+    padding: 0px;
+}
+
+#bannerlogo {
+    margin: 0px;
+    padding: 3px;
+    float: right;
+}
+
+#bannertext {
+    margin: 0px;
+    padding: 0px;
+    padding-right: 110px;
+    padding-top: 30px;
+    padding-bottom: 10px;
+    text-align: right;
+}
+
+        #bannertext a, a:link, a:visited {
+            color: #9cf;
+            text-decoration: underline;
+        }
+        
+        #bannertext a:hover {
+            text-decoration: none;
+       }
+        
+        #bannertext p {
+            margin: 0px;
+            padding: 0px;
+            padding-bottom: 25px;
+            color: white;
+            font-size: 0.8em;
+            text-indent: 0px;
+        }
+        
+        #bannertext a.placename {
+            text-decoration: none;
+        }
+        
+        #bannertext a.placename-foreign {
+            text-decoration: none;
+            font-style: italic;
+        }
+
+        #bannertext a.placename-batlas-modern {
+            text-decoration: none;
+            font-style: italic;
+        }
+        
+        #bannertext a.placename-batlas-ancient {
+            text-decoration: none;
+            font-style: normal;
+        }
+
+
+#content {
+    margin: 0px;
+    padding: 0px;
+}
+
+#logo{
+    border: none;
+    margin: 0px;
+    padding: 0px;
+}
+
+#noticefoot {
+    clear:both;
+    margin: 0px;
+    padding-top: 5px;
+    padding-bottom: 0px;
+    width: 100%;
+    background: #036;
+    border-top: white solid 3px;
+    text-align: center;
+}
+
+a, a:link  {
+    color: #003366;
+    text-decoration: underline;
+}
+
+a:visited {
+   color: #663366;
+}
+
+a:active {
+   color: #CC3333;
+}
+
+a:hover {
+    text-decoration: none;
+}
+
+a.citation {
+    vertical-align: super;
+    font-size: 0.8em;
+}
+
+a.gloss[href]:hover {
+    cursor:pointer;
+    border-bottom: 1px dotted #9cf;
+    color: #9cf;
+}
+
+a.placename {
+    text-decoration:none;
+}
+
+a.placename-foreign {
+    text-decoration:none;
+    font-style: italic;
+}
+
+a.placename-batlas-ancient {
+    font-style: normal;
+    text-decoration:none;
+}
+
+a.placename-batlas-modern {
+    font-style: italic;
+    text-decoration:none;
+}
+
+abbr, acronym, a.gloss:hover, a.gloss:visited, a.gloss:active, a.gloss {
+    text-decoration:none;
+    cursor:help;
+    border-bottom: 1px dotted;
+}
+
+blockquote {
+    clear: both;
+}
+
+.clear {
+    clear: both;
+}
+
+
+h1 {
+    margin: 0px;
+    padding: 0px;
+    color: white;
+    font-family: Trajan, "Palatino Linotype", "Times New Roman", Times, serif;
+    text-transform: uppercase;
+    font-weight: normal;
+    font-size: 1.5em;
+    text-indent: 0px;
+}
+
+h2, h3, h4, h5, h6 {
+    margin: 0px;
+    padding: 0px;
+    color: black;
+    font-family:  "Lucida Grande","Lucida Sans Unicode",Tahoma,"Arial Unicode MS",Legendum,Arial,Helvetica,sans-serif;
+    text-indent: 0px;
+}
+
+h2 {
+    margin-bottom: 1em;
+    font-size: 1.2em;
+    font-weight: bold;
+}
+
+h3 {
+    font-size: 1em;
+    font-weight: bold;
+}
+
+h4 {
+    font-size: 0.9em;
+    font-weight: bold;
+}
+
+h5 {
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+h6{
+    font-size: 0.7em;
+    font-weight: bold;
+}
+
+.highlight {
+    background: yellow;
+}
+
+.illustration-chip, .illustration-thumbnail-landscape, .illustration-thumbnail-portrait, .illustration-small-landscape, .illustration-small-portrait, .illustration-medium-landscape, .illustration-medium-portrait  {
+    float: left;
+    padding-bottom: 0.7em;
+    clear: left;
+}
+
+div.illustration-chip {
+    width: 90px;
+}
+
+
+div.illustration-thumbnail-landscape {
+    width: 210px;
+}
+
+        div.illustration-thumbnail-landscape p {
+            display: none;
+        }
+
+div.illustration-thumbnail-portrait {
+    width:  160px;
+}
+
+        div.illustration-thumbnail-portrait p {
+            display: none;
+        }
+
+
+div.illustration-small-landscape {
+    width: 410px;
+}
+
+        div.illustration-small-landscape p {
+            width: 400px;
+        }
+
+div.illustration-small-portrait {
+    width: 310px;
+}
+
+        div.illustration-small-portrait p {
+            width: 300px;
+        }
+        
+div.illustration-medium-landscape {
+    width: 610px;
+}
+
+        div.illustration-medium-landscape p {
+            width: 600px;
+        }
+        
+div.illustration-medium-portrait {
+    width: 460px;
+}
+
+        div.illustration-medium-portrait p {
+            width: 400px;
+        }
+        
+div.illustration-large-landscape {
+    width: 810px;
+}
+
+        div.illustration-large-landscape p {
+            width: 800px;
+        }
+
+div.illustration-large-portrait {
+    width: 610px;
+}
+
+        div.illustration-large-portrait p {
+            width: 600px;
+        }
+
+img {
+    border: 1px solid #333;
+    margin-top: 1em;
+    margin-right: 10px;
+}
+
+.title-monographic {
+    font-style: italic;
+}
+
+p.ab {
+    text-indent: 0em;
+}
+
+p.ab-strong {
+    text-indent: 0em;
+    background: #FDD;
+    border: solid red 2px;
+    padding: 0.5em;
+}
+p.block {
+    margin:0em;
+    text-indent: 0em;
+    margin-left: 1em;
+}
+
+q {
+    quotes: "" "" "" "";
+}
+
+table {
+    clear: both;
+    font-size: 0.9em;
+    margin-left: 2em;
+    margin-right: 2em;
+}
+
+        td, th {
+            vertical-align: top;
+            padding-left: 1em;
+            padding-right: 1em;
+        }
+
+        th {
+            font-weight: bold;
+            text-align: left;
+        }
+
+
+ul.bibliographic-list
+{
+    list-style-type: none;
+    clear: both;
+}
+
+li.bibliographic {
+    margin: 0.7em 0px;
+    text-indent: -1.5em;
+}
+
+ul.image
+{
+    list-style-type: none;
+    clear: both;
+    margin: 0px;
+    padding: 0px;
+}
+
+ul.simple {
+    list-style-type: none;
+    margin: 1.5em;
+    text-indent: -1.5em;
+}
+
+.notice {
+    color:red;
+}
+
+.urgent {
+    border:solid thin red;
+}
+
+span.foreign {
+    font-style: italic;
+}
+
+[xml\:lang] {
+    font-style: italic;
+}
+
+[xml\:lang="en"], [xml\:lang="en-us"], [xml\:lang="en-gb"] {
+    font-style: normal;
+}
+
+span.foreign[xml\:lang="grc"] {
+    font-style: normal;
+    font-family: "GentiumAlt","Gentium","Vusillus","Vusillus Old Face","Athena Unicode","New Athena Unicode","Arial Unicode MS",Cardo,Caslon,Legendum,"Lucida Sans Unicode","Minion Pro",Porson,Alphabetum,serif;
+}
+
+span.transliterated-greek {
+    font-style: italic;
+}
+
+span.foreign[xml\:lang="en"], span.foreign[xml\:lang="en-us"], span.foreign[xml\:lang="en-gb"] {
+    font-style: normal;
+}
+
+
+p.dateline {
+    margin: 0px;
+    padding: 0px;
+    color: black;
+    text-align: right;
+    font-family:  "Lucida Grande","Lucida Sans Unicode",Tahoma,"Arial Unicode MS",Legendum,Arial,Helvetica,sans-serif;
+    font-size: 0.7em;
+    text-indent: 0px;
+}
+
+

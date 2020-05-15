@@ -1,0 +1,5079 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2012 Ryan Horne and The Ancient World Mapping Center (AWMC) -->
+<!-- Source Code released under the GPLv2 -->
+<!-- Map data produced by AWMC released under CC BY-NC 3.0 -->
+<!-- Author(s): Ryan Horne -->
+<!-- Version: 2.0 15 October, 2012 -->
+
+
+<html>
+<head>
+<link rel="shortcut icon" href="../images/favicon.ico" />
+<title>AWMC: À-la-carte Map</title>
+<!-- All of the third party libraries we use -->
+<script src="http://openlayers.org/api/OpenLayers.js"></script>
+<script src="/includes/extjs/3.4.0/adapter/ext/ext-base.js" type="text/javascript"></script>
+<script src="/includes/extjs/3.4.0/ext-all.js"  type="text/javascript"></script>
+<link rel="stylesheet" type="text/css" href="/includes/extjs/3.4.0/resources/css/ext-all.css"></link>
+<script src="/includes/geoext/1.1/lib/GeoExt.js" type="text/javascript"></script>
+<link rel="stylesheet" type="text/css" href="/includes/geoext/1.1/resources/css/geoext-all-debug.css"></link>
+<!-- for the upload. MUST HAVE the css or things get wonky -->
+<script src="/includes/extjs/3.4.0/examples/ux/fileuploadfield/FileUploadField.js"></script>
+<link rel="stylesheet" type="text/css" href="/includes/extjs/3.4.0/examples/ux/fileuploadfield/css/fileuploadfield.css"/>
+<!-- we are going to reuse some jquery code / possibly use it for different calls and features -->
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.2/jquery.min.js"></script>
+<script type="text/javascript" src="http://awmc.unc.edu/tomcat/print-servlet-1.2-SNAPSHOT/pdf/info.json?var=printCapabilities"></script> 
+<!-- All of the rules for the various feature types are in the file below -->
+<script type="text/javascript" src="feature_rules.js"></script>
+   
+
+<!-- Now to launch the main functionality -->
+<script type="text/javascript">
+
+//to do:
+//clean code
+//instead of using the db to fill in the TBD, do it here instead. This allows for less cruft in the DB
+//feature rules for new features should be dynamic- make the dropdown object itself dynamic -> meaning new types of features
+//maybe last search
+//move interactive feature next to the ok button
+//maybe an information popup on the search results
+//for the connections another context should be used to set the magnitude property- so that a pleiades feature or custom one gets the general size option while 
+//for connections check to see if the string is greater than 3 elements before even bothering to do anything else
+//make the popup window tab panel items fill the tabpanel window
+//check inland water by crimea - it might be a swamp
+//perhaps make a config object for all of the popup panels and text panels
+//fix names database
+//fix null values with appropriate filler- here, not in the database.
+//make a form to test the post values and ensure that is working
+//get a sample map from the center to post to this map
+//make the upload more robust to handle anything that has a pleiades or awmc id
+//do the moved feature check
+//make search window slighty larger so the panel doesn't want to resize
+//delete the store from the search window between searches and when the close button is pushed
+
+//meddle with the print rotation to bring it back to nothing on a new print
+//adevertise the fact that the print area can be rotated
+
+//remove ok button from wmsfeaturepopup
+//still have the proxy issue where it goes down
+///re;launch search after checj
+//more values for swamps / ext in mapserver
+
+/***********************************************************************************/
+/***********************************************************************************/
+/******* The "Big" function that kicks off the application *************************/
+/***********************************************************************************/
+/***********************************************************************************/
+
+Ext.onReady(function() 
+{
+
+/***********************************************************************************/
+/*********** Initial Variables here ************************************************/
+/***********************************************************************************/
+
+var mapPanel, tree;
+var layers;
+var map;
+var ctrl, toolbarItems2 = [], toolbarItems = [], bbarItems = [], action, actions = {};
+var geoJsonResponse;
+var geojson_format = new OpenLayers.Format.GeoJSON();
+var popcounter = 0;
+var winWmsCounter = 0;
+var timeArry = [];
+var rulesDef = [];
+var currentFeature = new OpenLayers.Feature.Vector(); 
+//this may be buried somewhere in the documentation 
+var currentFeatureType;
+var popupToggle = 1;
+var popupanchor;
+var popuptext;
+var winGridBaseCounter = -99;
+var measWinCounter = 0;
+//windows
+var popup = new Ext.Window();
+var winGridBase= new Ext.Window();
+var winWms = new Ext.Window();
+var measWin = new Ext.Window();
+var printWin= new Ext.Window();
+//actions
+var measResult;
+var polyDrawSelect;
+//for opacity slider
+var opacLayers =[];
+
+/***********************************************************************************/
+
+/***********************************************************************************/
+/*********** Configuration objects  ************************************************/
+/***********************************************************************************/
+
+//this is the extent for the map
+var extent = new OpenLayers.Bounds(-30.0001388889, -10.0001388889, 89.9998611111, 69.9998611111);
+//these are the urls for our various map services. These need to be changed when we move the server to a different environement. 
+var baseUrl = '/cgi-bin/mapserv?map=/awmc-stor/html/awmc/mapfiles/carte_wms2.map';
+var overUrl = '/cgi-bin/mapserv?map=/awmc-stor/html/awmc/mapfiles/over.map';
+//for now sets the projectipon for everything. We can change this if we are going to serve google layers or something like that
+var mapProjection  = new OpenLayers.Projection("EPSG:4326");
+//this is to access the pelagios API for our feature info
+var pelagApi = 'http://pelagios.dme.ait.ac.at/api/places/http%3A%2F%2Fpleiades.stoa.org%2Fplaces%2F'; 
+// and the flickr url
+var flickrUrl = 'http://www.flickr.com/photos/tags/pleiades:*=';
+//and pleiades 
+var pleaBase = 'http://pleiades.stoa.org/places/';
+//for the connections in Pelagios - british spelling of neighbourhood, here for consistency 
+var pelagApiNeighbourhood ='http://pelagios.dme.ait.ac.at/api/network/neighbourhood.json?forPlace=http%3A%2F%2Fpleiades.stoa.org%2Fplaces%2F';
+
+//the fields we are going to be passing around from the postgis data
+//this is what each individual feature will store. Although some attributes could be "dynamic" we need to reference others specifically for manipulation and the program
+var fieldDefs =[
+	{name: 'basename', type: 'string'},
+	{name: 'custom_name', type: 'string'},
+	{name: 'en_name', type: 'string'},
+	{name: 'gr_name', type: 'string'},
+	{name: 'la_name', type: 'string'},
+	{name: 'pid', type: 'string'},
+	{name: 'awmcid', type: 'string'},
+	{name: 'featuretyp', type: 'string'},
+	{name: 'timeperiod', type: 'string'},
+	{name: 'perseus_li', type: 'string'},
+	{name: 'wiki_link', type: 'string'},            
+	{name: 'map_num', type: 'string'},
+	{name: 'popup_status', type: 'string'},
+	//this holds the pleiades ID and name from their json specifications, pulled from the link
+	//{name: 'id', type: 'string'}, //right now there are too many nested IDs.
+	{name: 'name', type: 'string'},
+	{name: 'link', type: 'string'},
+	//for loading a moved feature
+	{name: 'moved', type: 'string'}
+
+];
+
+//for the connections4
+var pelagJsonDefs =[
+	{name: 'source', type: 'string'},
+	{name: 'number_of_references', type: 'string'},
+	{name: 'in_number_of_datasets', type: 'string'},
+	{name: 'weight', type: 'string'}
+];
+
+//options for the layers on the map
+var overOptions = {
+	maxExtent:  extent,
+	maxResolution: "auto",
+	displayInLayerSwitcher: true,
+	group: "physical",
+	isBaseLayer: false,
+    projection: mapProjection,
+    //gutter is so we can place images over tiles
+    gutter:100,
+    hideInLegend: false,
+    tileSize: new OpenLayers.Size(200,100)
+	};
+	
+//from http://stackoverflow.com/questions/728360/copying-an-object-in-javascript
+var overOptionsCulture = jQuery.extend(true, {},overOptions);
+overOptionsCulture.group = 'culture';
+
+var overOptionsPolitical = jQuery.extend(true, {},overOptions);
+overOptionsPolitical.group = 'political';
+
+
+// General map options
+var options ={
+	projection: mapProjection,
+	maxExtent: extent,
+	minScale: 50000000,
+	maxResolution: "auto",
+	numZoomLevels: 11,
+	};
+	
+//the identifier of user controlled features	
+
+//toggle group for the main window bar
+
+var toggleGroup = "language controls";
+
+//we want our tools to look differently than normal or default things - mostly for visibility
+var defStyle = {strokeColor: "blue", strokeOpacity: "0.7", strokeWidth: 2, fillColor: "blue", pointRadius: 3, cursor: "pointer"};
+var sty = OpenLayers.Util.applyDefaults(defStyle, OpenLayers.Feature.Vector.style["default"]);
+
+//for the bottom of status bars. Reusing the object with multiple possible windows will probably not work
+var myTextItem = new Ext.Toolbar.TextItem({text: '0 Results'});
+var plTextItem = new Ext.Toolbar.TextItem({text: '0 Results'});
+var gridTextItem = new Ext.Toolbar.TextItem({text: 'Features'});
+
+//for the kml export
+var kmlStringStart = '<![CDATA[';
+var kmlStringEnd = ' ]]>';
+
+//this adds a level of padding to our windows so the text is not crowded and the panel itself is white
+//a config because we want a consistant look and feel. Another one for less padding when we do not want so much padding
+var bodyStylerText = 'background-color:#FFFFFF; padding: 10px 10px 10px 10px;';
+var bodyStyler = 'background-color:#FFFFFF;';
+
+
+var basicMask = new Ext.LoadMask(Ext.getBody(), {msg:"Loading..."});
+
+
+/***********************************************************************************/
+
+
+
+/***********************************************************************************/
+/*********** message window and configuration **************************************/
+/***********************************************************************************/
+
+
+    var msg = function(title, msg) {
+        Ext.Msg.show({
+            title: title,
+            msg: msg,
+            minWidth: 200,
+            modal: true,
+           // icon: Ext.Msg.INFO,
+            buttons: Ext.Msg.OK
+        });
+    };
+/***********************************************************************************/
+
+
+
+/***********************************************************************************/
+/*********** message window and configuration for no search results*****************/
+/***********************************************************************************/
+
+
+function showSearchWin()
+{
+	winSearchLaunch.show();
+}
+
+var msgSearch = function(title, msg) {
+        Ext.Msg.show({
+            title: title,
+            msg: msg,
+            minWidth: 200,
+            modal: true,
+           // icon: Ext.Msg.INFO,
+            buttons: Ext.Msg.OK,
+            fn: showSearchWin
+        });
+    };
+/***********************************************************************************/
+
+/***********************************************************************************/
+/*********** Opacity Slider Configuration ******************************************/
+/***********************************************************************************/
+
+
+var opacitySlider = new GeoExt.LayerOpacitySlider({
+    width: 150,
+    aggressive: true,
+        plugins: new GeoExt.LayerOpacitySliderTip({
+        template: "Opacity: {opacity}%"
+    })
+    });
+
+/***********************************************************************************/
+
+
+
+/***********************************************************************************/
+/*********** upload Configuration **************************************************/
+/***********************************************************************************/
+
+//get the vtypes for different upload / download formats
+
+Ext.apply(Ext.form.VTypes, {
+	json: function(v){
+		return /^.*\.(json)$/.test(v);
+	},
+	jsonText: 'Only .json files supported'
+});
+
+//might add kml upload later
+/*
+Ext.apply(Ext.form.VTypes, {
+	kml: function(v){
+		return /^.*\.(kml)$/.test(v);
+	},
+	kmlText: 'Only .kml files supported'
+});
+*/
+
+
+/***********************************************************************************/
+
+
+/***********************************************************************************/
+/*********** About window  *********************************************************/
+/***********************************************************************************/
+//this is more of a configuration than anything so it is here
+
+//concat to make it less unwieldy to change and edit. This may be all moved to an include file in the future
+var aboutHtml =String('<b>The Antiquity À-la-carte Application</b> is an interactive digital atlas of the Ancient Mediterranean World. It is produced by <a href="http://awmc.unc.edu" target="_blank">Ancient World Mapping Center</a> (AWMC) at <a href="http://www.unc.edu/index.htm" target="_blank">The University of North Carolina, Chapel Hill</a>.');
+aboutHtml = aboutHtml.concat('<br><br>It is designed, developed, and maintained by <b>Ryan Horne</b>, utilizing data from the AWMC produced by <b>Richard Talbert, Jeffery Becker, Ryan Horne, Ray Belanger, Steve Burges, Luke Hagemann, Ashley Lee</b>, and <a href="http://awmc.unc.edu/wordpress/affiliates/" target="_blank">others</a>.');
+aboutHtml = aboutHtml.concat('<br><br>Feature data is derived from <a href="http://pleiades.stoa.org/" target="_blank">Pleiades</a> and the elevation model is derived from <a href="http://eros.usgs.gov/#/Find_Data/Products_and_Data_Available/SRTM" target="_blank">USGS supplied SRTM data</a>.');
+aboutHtml = aboutHtml.concat(' All other landscape data is originally derived from <a href="http://webgis.wr.usgs.gov/globalgis/metadata_qr/metadata/airfields.htm" target="_blank"> Vmap0</a> and produced by the AWMC following the <i><a href="http://www.worldcat.org/oclc/43970336" target="_blank">Barrington Atlas</a></i>.'); 
+aboutHtml = aboutHtml.concat(' Map icons are partially derived from <a href="http://www.sjjb.co.uk/mapicons/" target="_blank"> SJJB SVG Map Icons</a>, <a href="http://commons.wikimedia.org/wiki/Main_Page" target="_blank">Wikimedia Commons</a>, <a href="http://trac.osgeo.org/mapserver/wiki/SymbologyExchangeVector" target="_blank"> MapServer</a>, and the work of the AWMC.');
+aboutHtml = aboutHtml.concat('<br><br>All site content, map data, and maps created by the application are released under the <a href="http://creativecommons.org/licenses/by-nc/3.0/" target="_blank"> Creative Commons CC BY-NC 3.0 license</a> and are completely free for non-commercial use. The underlying javascript code is released under <a href="http://www.gnu.org/licenses/gpl-2.0.html" target="_blank"> GPLv2.</a>');
+aboutHtml = aboutHtml.concat('<br><br>For more information on the application visit:<br> <a href="http://awmc.unc.edu/wordpress/alacarte/" target="_blank">http://awmc.unc.edu/wordpress/alacarte/</a> <br> Or the AWMC website:<br><a href="http://awmc.unc.edu" target="_blank"> http://awmc.unc.edu</a>');
+aboutHtml = aboutHtml.concat('<br><br>© 2012 Ancient World Mapping Center');
+
+var aboutPanel = new Ext.Panel(
+{
+	region:'center',
+    id: 'aboutPanel',
+    bodyStyle: bodyStylerText,
+    autoScroll:true,
+    html:aboutHtml
+}); 
+
+var aboutWin= new Ext.Window(
+{
+	id: 'aboutWin',
+	width: 350,
+	height: 460,
+	title: 'Antiquity À-la-carte 2.0',
+	layout: 'border',
+	items:aboutPanel,
+	closeAction:'hide',
+	//otherwise closing the top will nerf the window
+	listeners:
+	{
+		'deactivate':function()
+		{
+			aboutWin.hide();
+		}
+	}
+});
+
+aboutWin.addButton(
+{
+	text: "Close",
+	handler: function()
+	{
+		fn_hideWin(aboutWin);
+	}
+});
+
+/***********************************************************************************/
+
+
+/***********************************************************************************/
+/*********** Help window  *********************************************************/
+/***********************************************************************************/
+//this is also more of a configuration than anything so it is here
+
+
+var helpHtml =String('For a user guide and tutorial, please see our page at:<a href="http://awmc.unc.edu/wordpress/alacarte/user-guide/" target="_blank"> http://awmc.unc.edu/wordpress/alacarte/user-guide/</a>.');
+helpHtml = helpHtml.concat(' <br><br> The main application page at  <a href="http://awmc.unc.edu/wordpress/alacarte/" target="_blank">http://awmc.unc.edu/wordpress/alacarte/</a> offers more information about the application and provides an opportunity to participate in the À-la-carte community.'); 
+
+var helpPanel = new Ext.Panel(
+{
+	region:'center',
+	id: 'helpPanel',
+	bodyStyle: bodyStylerText,
+	autoScroll:true,
+	html:helpHtml
+}); 
+
+var helpWin= new Ext.Window(
+{
+	id: 'helpWin',
+	width: 350,
+	height: 200,
+	title: 'Help',
+	layout: 'border',
+	items:helpPanel,
+	closeAction:'hide',
+	listeners:
+	{
+		'deactivate':function()
+		{
+			helpWin.hide();
+		}
+	}
+	});
+
+helpWin.addButton(
+{
+	text: "Close",
+	handler: function()
+	{
+		fn_hideWin(helpWin);
+	}
+});
+
+/***********************************************************************************/
+
+
+
+/************************************************************************************/
+/****** Printer configuration ******************************************************/
+/***********************************************************************************/
+
+//first, create a loading mask for the printing event as it could take a while
+var printMask = new Ext.LoadMask(Ext.getBody(), {msg:"Creating .pdf File..."});
+
+
+//this is a terrible hack, but for the life of us we cannot get our mapfish install to omit the 8080 from its urls
+printCapabilities.createURL = printCapabilities.createURL.replace(":8080" ,"");
+printCapabilities.createURL = printCapabilities.createURL.replace("http://awmc.unc.edu/" ,"http://awmc.unc.edu/tomcat/");
+printCapabilities.printURL = printCapabilities.printURL.replace(":8080" ,"");
+printCapabilities.printURL = printCapabilities.printURL.replace("http://awmc.unc.edu/" ,"http://awmc.unc.edu/tomcat/");
+
+// The printProvider that connects us to the print service
+var printProvider = new GeoExt.data.PrintProvider(
+{
+	method: "POST", 
+	capabilities: printCapabilities, // from the info.json script in the html
+	customParams:
+	{
+		dpi: 600,
+    }
+});
+
+
+printProvider.addListener("print",
+	function(evt)
+	{
+		printMask.hide();
+	}
+);
+    
+printProvider.addListener("printexception",
+	function(evt)
+	{
+	msg('Print Error', 'The server returned an exception');
+		printMask.hide();
+	}
+);    
+    
+// Our print page. Tells the PrintProvider about the scale and center of our page.  
+printPage = new GeoExt.data.PrintPage(
+{
+	printProvider: printProvider
+});
+
+    var printExtent = new GeoExt.plugins.PrintExtent({
+        printProvider: printProvider
+    });
+
+
+/***********************************************************************************/
+
+
+
+/***********************************************************************************/
+/******** Variables that depend on configs and / or other variables ****************/
+/***********************************************************************************/
+
+
+var addreader = new GeoExt.data.FeatureReader({},fieldDefs);
+
+var addstore = new GeoExt.data.FeatureStore(
+{
+	reader: addreader,
+	fields: fieldDefs,
+	autoLoad: false
+}
+);
+
+var editreader = new GeoExt.data.FeatureReader({},fieldDefs);
+
+var editstore = new GeoExt.data.FeatureStore(
+{
+	reader: addreader,
+	fields: fieldDefs,
+	autoLoad: false
+}
+);
+
+
+var pelagJsonReader = new GeoExt.data.FeatureReader({},pelagJsonDefs);
+
+var pelagJsonStore = new GeoExt.data.FeatureStore(
+{
+	reader: pelagJsonReader,
+	fields: pelagJsonDefs,
+	autoLoad: false
+}
+);
+
+
+/***********************************************************************************/
+
+
+
+/***********************************************************************************/
+/******** Styling and Context ******************************************************/
+/***********************************************************************************/
+//first it will set all the title atributes for each feature to none.
+//next it will check for a key value (english, greek, latin, none) everytime the button is pressed
+//then it will use that key value to assign the label which will be unassigned by default
+//the context and template will be used below in the cities layer. It had to be done this way so the language rules 
+//would not show up in the geoext legend
+
+//for Pleiades Names
+var contextBase = {
+	foo: function(feature)
+	{
+		return feature.attributes.basename;
+	}
+};
+
+//for Custom Names
+var contextCustom = {
+	foo: function(feature)
+	{
+		return feature.attributes.custom_name;
+	}
+};
+
+//for English Names   
+var contextEn = {
+	foo: function(feature) 
+	{
+		return feature.attributes.en_name;
+	}
+};
+   
+//for Greek Names
+var contextGr = {
+	foo: function(feature)
+	{
+		return feature.attributes.gr_name;
+	}
+};
+ 
+ //for Latin Names  
+var contextLa = {
+	foo: function(feature)
+	{
+		return feature.attributes.la_name;
+	}
+};
+  
+//for Map Numbers 
+var contextMa = {
+	foo: function(feature)
+	{
+		return feature.attributes.map_num;
+	}
+};
+ 
+//for no labels  
+var contextNo = {
+	foo: function(feature)
+	{
+		return "";
+	}
+};
+  
+//our default style rule set
+var template ={
+	//this is the label- must be changed to a different variable for different languages
+	label : "${foo}",
+	fontColor: "black",
+	fontSize: "10px",
+	fontFamily: "Tahoma",
+	fontWeight: "bold",
+	labelAlign: "center",
+	labelXOffset : 0,
+	labelYOffset : 10,
+	labelSelect : true,
+	labelOutlineColor: "white",
+	labelOutlineWidth: 2
+};
+
+//incase we need to hide something
+var templateHide ={
+	fillOpacity: 0.0,
+	strokeOpacity: 0.0
+};
+ 
+
+//we loop here just to make sure the rules went through ok and we do not have cruft in the drop downs
+for (var i = 0; i < rules.length; i++)
+{
+	rulesDef.push(rules[i].filter.value)
+}
+
+//so we do not have to worry about alphabetizing while coding
+rulesDef.sort();
+
+//this double array gets the features ready for a store below
+for ( var i = 0, c = rulesDef.length; i < c; i++ )
+{
+	rulesDef[i] = [rulesDef[i]];
+}
+
+//these are the rules that we want to display in the legend
+//so we do not have to worry about alphabetizing while coding
+legendRules.sort();
+
+/***********************************************************************************/
+
+
+
+/***********************************************************************************/
+/******** Simple Functions here ****************************************************/
+/***********************************************************************************/
+
+/**** makeMapNumbers creates the numbers for our gazetteer and map. Skips any hidden features ****/
+//
+function makeMapNumbers(layer)
+{
+	var nummer = 1;
+	for(var i = 0; i < layer.features.length; i++)
+	{
+		if ( layer.features[i].renderIntent != "hidden")
+        {
+        	layer.features[i].attributes.map_num = nummer;
+        	nummer++;
+        }
+        else 
+        {
+        	layer.features[i].attributes.map_num ='';
+        }
+    }
+} 
+/***********************/
+
+
+/**** formatLonlats sets up the numbers display on the bottom of the map ****/
+//
+function formatLonlats(lonLat)
+{
+	var lat = lonLat.lat;
+	var long = lonLat.lon;
+	var ns = OpenLayers.Util.getFormattedLonLat(lat);
+	var ew = OpenLayers.Util.getFormattedLonLat(long,'lon');
+	return ns + ', ' + ew + ' (' + (Math.round(lat * 10000) / 10000) + ', ' + (Math.round(long * 10000) / 10000) + ')';
+}
+/***********************/
+
+
+/**** nameChanger changes the context for labels ****/
+//
+function nameChanger(layer, lang)
+{
+	//changing the context is probably the best way to change all the labels
+	layer.styleMap.styles['default'].context = lang;
+	layer.redraw();
+}
+/***********************/
+
+
+/**** fn_hideWin just ensures that a window is visible before it is closed ****/
+//
+//making this a function so we can catch any errors that may arise from random closings
+function fn_hideWin(window)
+{
+	if (window.isVisible())
+	{
+		window.hide();
+	}
+}
+/***********************/
+
+
+/**** addCityFeature ensures that the feature does not already exist before adding it ****/
+//the check here is on the pid. This could be a config option later if we are testing for something else
+function addCityFeature(layer, feature)
+{
+	var pidChecker = false;
+	for (var i = 0; i < layer.features.length; i++)
+	{
+		if (feature.attributes.pid == layer.features[i].attributes.pid)
+		{
+				pidChecker = true;
+
+		}
+	}
+	
+	if(pidChecker == false)
+	{
+		layer.addFeatures([feature]);
+	}
+
+}
+
+/***********************/
+
+
+/***********************************************************************************/
+
+
+
+/***********************************************************************************/
+/******** Time functionality begins here ******************************************/
+/***********************************************************************************/
+
+//this function sets up our time displays
+
+function timeObj (timeL, dispT)
+{
+	this.timeL = timeL;
+	this.dispT = dispT;
+}
+
+//the times we are using, THis might move to a definition array as we add new objects
+//right now Classical time will be the default
+timeA = new timeObj ("A", true);
+timeC = new timeObj ("C", true);
+timeH = new timeObj ("H", true);
+timeR = new timeObj ("R", true);
+timeL = new timeObj ("L", true);
+
+var timeContainer = [
+	timeA, 
+	timeC,
+	timeH,
+	timeR,
+	timeL
+];
+
+//this is an ugly, UGLY, TERRIBLE kludge to get the date function working
+//need to add a while loop here to elminate uncecessary iterations
+function timeChanger(layer, timeCount)
+{
+	var timeCheck = [];
+	var isInTime;
+	for (var z = 0; z < timeCount.length; z++)
+	{
+		if (timeCount[z].dispT == true)
+		{
+			timeCheck.push(timeCount[z].timeL)
+		}
+	}
+	
+	for (var i = 0; i < layer.features.length; i++)
+	{
+		isInTime = 0;
+		for (var f = 0; f < timeCheck.length; f++)
+		{
+			if ( layer.features[i].attributes.timeperiod.indexOf(timeCheck[f]) == -1 && isInTime != 1)
+			{
+				layer.features[i].renderIntent = "hidden";
+				layer.features[i].style = OpenLayers.Feature.Vector.style["delete"];
+				layer.drawFeature(cities.features[i]);
+			}
+			else
+			{
+				layer.features[i].style = OpenLayers.Feature.Vector.style[template];
+				layer.features[i].renderIntent = "default";
+				layer.drawFeature(cities.features[i]);
+				isInTime = 1;
+			}
+		}
+	}
+	//just to make sure everythign is caught
+	layer.redraw();
+}
+
+/***********************************************************************************/
+
+
+
+/***********************************************************************************/
+/******** fn_submitForm *********************************************/
+/***********************************************************************************/
+//this is the main search function. Perhaps it should be renamed
+
+function fn_submitForm(button,event)
+{
+	//loadmask
+	basicMask.show();
+	//clear the store and the visual display
+	var f = Ext.getCmp('formPanel');
+	var nameparam = formPanel.getForm().findField("formName").getValue();
+	var typeparam = formPanel.getForm().findField("formType").getValue();
+	var timeparam = formPanel.getForm().findField("formTime").getValue();
+	var pidparam = formPanel.getForm().findField("formPID").getValue();
+	var geomparam = formPanel.getForm().findField("formGeom").getValue();
+	
+	//this will eliminate casual returns of all the features. A user could still put in a space or something like that
+	//possibly strip the values of spaces as well for the checker....
+	if (nameparam == '' && typeparam  == '' && timeparam  == '' && pidparam  == '' && geomparam   == '')
+	{
+		msgSearch('Search Error', 'Please enter a value into the search form');
+		basicMask.hide();
+	}
+	
+	//if there is something in the search box, continue
+	else
+	{
+		if( f.getForm().isValid() == true)
+		{
+			Ext.Ajax.request(
+			{
+				url : 'geojson2.php',
+				method: 'GET',
+				params : 
+				{
+					name : nameparam,
+					type : typeparam,
+					timeperiod: timeparam,
+					pid: pidparam,
+					geomParam : geomparam
+				},
+				//if everything works add the features to a store that the user can choose from
+				success: function(objServerResponse)
+				{
+					store.removeAll();
+					//we need to catch an error if the geojson returns but has no features
+					try
+					{
+						store.loadData(geojson_format.read(objServerResponse.responseText));
+						var rows = String(store.getCount());
+						
+						if (rows != '1')
+						{
+							var newTextItem = rows.concat(" Results");
+						}
+						
+						else
+						{
+							var newTextItem = rows.concat(" Result");
+						}
+					}
+					catch(e)
+					{
+						var newTextItem ='0 Results';
+						basicMask.hide();
+					}
+				myTextItem.setText(newTextItem);
+			},
+			failure : function(objServerResponse){}
+			});
+		}
+	}
+}
+
+
+//at the moment the listeners for the change are pretty ugly but they work.
+//otherwise the form panel submission did not seem to work (even with submit)
+//this is something we are going to have to look into
+
+var formPanel = new Ext.FormPanel(
+{
+	title:'Search Criteria. Change values and press search to refine your results',
+    height: 200,
+    width: 400,
+    autoScroll: true,
+    bodyStyle: bodyStylerText,
+    buttonAlign :'left',
+    url:'geojson.php',
+    region: "west",
+    id: "formPanel",
+    items: [
+    {
+        xtype: "textfield",
+        name: "formName",
+        fieldLabel: "Name (any language)",
+        id: "formName"
+    },
+    {
+    	xtype: "combo",
+        name: "formType",
+        fieldLabel: "Type (leave blank for any)",
+            forceSelection: true, 
+        id: "formType",
+        store: new Ext.data.SimpleStore(
+        {
+        	fields: ['rules'],
+        	data : rulesDef
+        }),
+        displayField: 'rules',
+        typeAhead: true,
+        mode: 'local',
+        width:147,
+        listWidth: 147
+    },
+    {
+        xtype: "textfield",
+        name: "formTime",
+        fieldLabel: "Time Period",
+        id: "formTime"
+    },
+    {
+        xtype: "textfield",
+        name: "formPID",
+        fieldLabel: "Pleiades ID",
+        id: "formPID"
+    },
+    {
+    	xtype: "textfield",
+        name: "formGeom",
+        fieldLabel: "Geometry",
+        id: "formGeom"
+    }
+    ],
+    keys: [
+    {
+    	key: [Ext.EventObject.ENTER], 
+    	handler: fn_submitForm
+    }]
+});
+
+formPanel.addButton(
+{
+    text: "Search",
+    handler: fn_submitForm,
+    scope: formPanel
+});
+
+formPanel.addButton(
+{
+	text: 'Draw Search Area',
+    handler: function(toggled)
+    {
+        if (toggled)
+        {
+        	fn_hideWin(winSearchLaunch);
+        	polyDrawSelect = new OpenLayers.Control.DrawFeature(cities,OpenLayers.Handler.Polygon,
+			{
+				displayClass: 'pointButton', 
+				title: 'Polygon Select',
+				featureAdded:function(feature) 
+					{
+						cities.removeFeatures([feature]);
+	        	        var areaGeomText = feature.geometry.toString();
+	        	//this sets the geometry for the polygon search and refining search
+	        	//we zero out everything else so a new polygon starts from scratch
+	        	        formPanel.getForm().setValues(
+	        	        {
+	        	        	formName:"",
+	        	        	formType:"",
+	        	        	formTime:"",
+	        	        	formPID:"",
+	        	        	formGeom:areaGeomText
+	        	        });
+	        	        Ext.Ajax.request(
+	        	        	{
+	        	        		url : 'polygon_return.php',
+	        	        		method: 'GET',
+	        	        		params : 
+	        	        			{
+	        	        				geom : areaGeomText
+	        	        			},
+	        	        		//if everything works add the features to a store that the user can choose from
+	        	        		success: function(objServerResponse)
+	        	        			{
+	        	        				store.removeAll();
+	        	        				try
+	        	        				{
+	        	        					store.loadData(geojson_format.read(objServerResponse.responseText));
+	        	        					var rows = String(store.getCount());
+	        	        					if (rows != '1')
+	        	        					{
+	        	        						var newTextItem = rows.concat(" Results");
+	        	        					}
+	        	        					else
+	        	        					{
+	        	        						var newTextItem = rows.concat(" Result");
+	        	        					}
+	        	        				}
+	        	        				catch(e)
+	        	        				{
+	        	        					var newTextItem ='0 Results';
+	        	        				}
+	        	        				myTextItem.setText(newTextItem);
+	        	        				defaultAction.enable(); //we want to switch to select mode after drawing the polygon so a user can select the new features
+	        	        				winSearchLaunch.show(); //show the results window
+	        	        			},
+	        	        		failure : function(objServerResponse){}
+	        	        	});
+	        	        },
+	        	    handlerOptions: {style: sty}
+	        	});
+	        map.addControl(polyDrawSelect);
+	        polyDrawSelect.activate();
+	    }
+		else 
+		{
+            length.deactivate();
+        }
+    }
+});
+
+formPanel.addButton(
+{
+	text: "Clear Form",
+    handler: function()
+    {
+    	formPanel.getForm().setValues(
+    	{
+    		formName:"",
+    		formType:"",
+    		formTime:"",
+    		formPID:"",
+    		formGeom:""
+    	});
+    },
+	scope: formPanel
+});
+
+/******** end fn_submitForm ********************************************************/
+
+
+
+/***********************************************************************************/
+/******** function fn_editsubmitForm ************************************************/
+/***********************************************************************************/
+
+
+function fn_editsubmitForm(featureIn)
+{
+	//clear the store and the visual display
+	editstore.removeAll();
+	
+	//setup the json store
+	var geoJSON = new OpenLayers.Format.GeoJSON();
+	var geoJSONText = geoJSON.write(currentFeature.geometry);
+	
+	var f = Ext.getCmp('formPanelEdit');
+	var ennameparam = formPanelEdit.getForm().findField("editformenName").getValue();
+	var grnameparam = formPanelEdit.getForm().findField("editformgrName").getValue();
+	var lanameparam = formPanelEdit.getForm().findField("editformlaName").getValue();
+	var typeparam = formPanelEdit.getForm().findField("editformType").getValue();
+	var timeparam = formPanelEdit.getForm().findField("editformTime").getValue();
+	var pidparam = formPanelEdit.getForm().findField("editformPid").getValue();
+	var persparam = formPanelEdit.getForm().findField("editformPers").getValue();
+	var wikiparam = formPanelEdit.getForm().findField("editformWiki").getValue();
+	var searchnameparam = formPanelEdit.getForm().findField("editformSearchName").getValue();
+	var customnameparam = formPanelEdit.getForm().findField("editformCustomName").getValue();
+	
+	if( f.getForm().isValid() == true)
+	{
+		Ext.Ajax.request(
+		{
+			url : 'geojsonmake.php',
+			method: 'GET',
+			params : 
+			{
+				enname : ennameparam,
+				grname : grnameparam,
+				laname : lanameparam,
+				type : typeparam,
+				timeperiod: timeparam,
+				pid: pidparam,
+				geom: geoJSONText
+			},
+			//if everything works add the features to a store that the user can choose from
+			success: function(objServerResponse)
+			{
+				editstore.loadData(geojson_format.read(objServerResponse.responseText));
+				var featadd = editstore.getAt(0);
+				var feature = featadd.get("feature");
+				feature.attributes.perseus_li = persparam;
+				feature.attributes.wiki_link = wikiparam;
+				feature.attributes.basename = searchnameparam;
+				feature.attributes.custom_name = customnameparam; 
+				var searchpid = feature.attributes.pid;
+				var delfeat = cities.getFeaturesByAttribute('pid', searchpid); 
+				
+				if(delfeat)
+				{
+					for (var k = 0; k < delfeat.length; k++)
+					{
+						try
+						{
+							cities.removeFeatures([delfeat[k]]);
+						}
+						catch(e){}
+					}
+				}
+				addCityFeature(cities, feature);
+			},
+			failure : function(objServerResponse){}
+		});
+	}
+	//hide the popup
+	fn_hideWin(popup);
+}//end
+          
+          
+var formPanelEdit = new Ext.FormPanel(
+{
+    autoScroll: true,
+    store: editstore,
+    bodyStyle: bodyStylerText,
+    height: 350,
+    buttonAlign :'left',
+    id: "formPanelEdit",
+    items: [
+    {
+    	xtype: "textfield",
+        name: "editformSearchName",
+        id: "editformSearchName",
+        fieldLabel: "Pleiades Name"
+    },
+    {
+        xtype: "textfield",
+        name: "editformCustomName",
+        id: "editformCustomName",
+        fieldLabel: "Custom Name"
+    },
+    {
+        xtype: "textfield",
+        name: "editformenName",
+        fieldLabel: "English Name",
+        id: "editformenName"
+    },
+    {
+        xtype: "textfield",
+        name: "editformgrName",
+        fieldLabel: "Greek Name",
+        id: "editformgrName"
+    },
+    {
+        xtype: "textfield",
+        name: "editformlaName",
+        fieldLabel: "Latin Name",
+        id: "editformlaName"
+    },
+    {
+        xtype: "combo",
+        name: "editformType",
+        fieldLabel: "Type",
+            forceSelection: true, 
+        id: "editformType",
+        store: new Ext.data.SimpleStore(
+        {
+        	fields: ['rules'],
+        	data : rulesDef
+        }),
+        displayField: 'rules',
+        typeAhead: false,
+        mode: 'local',
+        width:147,
+        listWidth: 147,
+        allowBlank: false //otherwise nothing will display as there are no rules
+    },
+    {
+        xtype: "textfield",
+        name: "editformTime",
+        fieldLabel: "Time Period",
+        id: "editformTime",
+        value: "ACHRL",
+        allowBlank: false 
+    },
+    {
+        xtype: "textfield",
+        name: "editlat",
+        id: "editlat",
+        fieldLabel: "Latitude"
+    },
+    {
+        xtype: "textfield",
+        name: "editlong",
+        id: "editlong",
+        fieldLabel: "Longitude"
+    },
+    {
+        xtype: "textfield",
+        name: "editformPid",
+        id: "editformPid",
+        disabled: true,
+        readOnly: true,
+        fieldLabel: "PID"
+    },
+    {
+        xtype: "textfield",
+        name: "editformPers",
+        id: "editformPers",
+        fieldLabel: "Perseus Link"
+    },
+    {
+        xtype: "textfield",
+        name: "editformWiki",
+        id: "editformWiki",
+        fieldLabel: "Wiki Link"
+    }
+    ],
+    keys: [
+    { 
+    	key: [Ext.EventObject.ENTER], 
+    	handler: function()
+    	{
+    		fn_editsubmitForm(currentFeature);
+    	}
+    }]
+});
+
+
+/******** end fn_addsubmitForm *********************************************/
+
+
+
+
+/***********************************************************************************/
+/******** function makeGridCount ***************************************************/
+/***********************************************************************************/
+
+//this resets the gridcounter we use for the gridpanel to reflect the number of features after a change
+
+function makeGridCount(gridTextItem, vectorstore)
+{
+	var gridCounter = String(vectorstore.getCount());
+	
+	//only use plural if we have more than one
+	if (gridCounter != '1')
+	{
+		var newTextItemGrid = gridCounter.concat(" Features");
+	}
+    else
+    {
+    var newTextItemGrid = gridCounter.concat(" Feature");
+    }
+    
+    gridTextItem.setText(newTextItemGrid);
+}
+    
+/******** end makeGridCount *******************************************************/
+
+
+
+
+/***********************************************************************************/
+/******** function fnCreateGrid Gazetteer Grid functionality ***********************/
+/***********************************************************************************/
+//creates a new gazetteer each time. We may want to make this a separate window that refreshes instead of being recreated
+function fnCreateGrid()
+{
+	//basicMask.hide();
+	//incase the window is exposed for some reason
+	fn_hideWin(winGridBase);
+	//we do not want popups on this grid
+	popupToggle = 0;
+	
+	makeGridCount(gridTextItem, vectorstore);
+    
+    var  vgridPanelBase = new Ext.grid.GridPanel(
+    {
+    	region: 'center',
+        id: 'vgridPanelBase',
+        bbar:[ 
+        	{xtype: 'tbfill'},
+    		gridTextItem
+    	],  
+        autoScroll: true,
+        buttonAlign :'left',
+        store: vectorstore,
+        columnLines: true,
+        width: 880,
+        height: 130,
+        columns: [
+        {
+        	header: "Pleiades Name",
+            width: 100,
+            dataIndex: "basename",
+            sortable: true
+        },
+        {
+        	header: "Custom Name",
+            width: 100,
+            dataIndex: "custom_name",
+            sortable: true
+        }, 
+        {
+            header: "English Name",
+            width: 100,
+            dataIndex: "en_name",
+            sortable: true
+        }, 
+        {
+            header: "Greek Name",
+            width: 100,
+            dataIndex: "gr_name",
+            sortable: true
+        }, 
+        {
+            header: "Latin Name",
+            width: 100,
+            dataIndex: "la_name",
+            sortable: true
+        },
+        {
+            header: "Type",
+            width: 100,
+            dataIndex: "featuretyp",
+            sortable: true
+        },
+        {
+            header: "Time Period",
+            width: 100,
+            dataIndex: "timeperiod",
+            sortable: true
+        },
+        {
+            header: "Pleiades ID",
+            width: 100,
+            dataIndex: "pid",
+            sortable: true
+        },
+        {
+            header: "Map Number",
+            width: 100,
+            dataIndex: "map_num",
+            sortable: true
+        }
+        ],
+        sm: new GeoExt.grid.FeatureSelectionModel()
+    });
+    
+    //toolbar items for the feature grid. The show / hide feature is excluded since the code is easier if it is in that section
+    //the timecontainer / timearray should perhaps be cleaned up a bit. Maybe using object properties
+    
+    vgridPanelBase.addButton(
+	{
+		text: "Hide / Show Feature",
+		handler: function()
+		{
+			vgridPanelBase.getSelectionModel().each(function(rec)
+			{
+				var feature = rec.getFeature();
+				if (feature.renderIntent == "hidden")
+				{
+					feature.style = OpenLayers.Feature.Vector.style[template];
+					feature.renderIntent = "default";
+					
+				}
+				else
+				{
+					feature.renderIntent = "hidden";
+					feature.style = OpenLayers.Feature.Vector.style["delete"];
+				}
+				cities.drawFeature(feature);
+			})
+		}
+	});
+	
+	vgridPanelBase.addButton(
+	{
+		text: 'Hide All Features',
+		handler: function(toggled)
+		{
+			if (toggled)
+			{
+				for (var i = 0; i < cities.features.length; i++)
+				{
+					cities.features[i].renderIntent = "hidden";
+					cities.features[i].style = OpenLayers.Feature.Vector.style["delete"];
+					cities.drawFeature(cities.features[i]);
+				}
+				
+				for (var i = 0; i < timeArry.length; i++)
+				{
+					timeArry[i].setChecked(false);
+					timeContainer[i].dispT = false;
+				}
+			} //end of toggled 
+			
+			else
+			{
+				length.deactivate();
+			}
+		}
+	});
+  
+        
+	vgridPanelBase.addButton(
+	{
+		text: 'Show All Features',
+		handler: function(toggled)
+		{
+			if (toggled)
+			{
+				for (var i = 0; i < cities.features.length; i++)
+				{
+					cities.features[i].style = OpenLayers.Feature.Vector.style[template];
+					cities.features[i].renderIntent = "default";
+					cities.drawFeature(cities.features[i]);
+				}
+				
+				for (var i = 0; i < timeArry.length; i++)
+				{
+					timeArry[i].setChecked(true);
+					timeContainer[i].dispT = true;
+				}
+			} 
+			else 
+			{
+				length.deactivate();
+			}
+		}
+	});
+	
+	vgridPanelBase.addButton(
+	{
+		text: 'Number Map Features',
+		handler: function(toggled)
+		{
+			if (toggled)
+			{
+				makeMapNumbers(cities);
+				vectorstore.loadData(cities.features, false)
+			} 
+			else
+			{
+				length.deactivate();
+			}
+		}
+	});
+	
+	vgridPanelBase.addButton(
+	{
+		text: "Delete Feature",
+		handler: function()
+		{
+			vgridPanelBase.getSelectionModel().each(function(rec)
+			{
+				var feature = rec.get("feature");
+				cities.removeFeatures([feature]);
+            	fn_hideWin(popup);
+            	makeGridCount(gridTextItem, vectorstore);
+            })
+        }
+    });
+    
+    vgridPanelBase.addButton(
+    {
+    	text: "Delete All Features",
+    	handler: function()
+    	{
+    		cities.removeAllFeatures();
+    		//there may be a popup hanging around
+    		fn_hideWin(popup);
+    		makeGridCount(gridTextItem, vectorstore);
+    	}
+    });
+    
+    vgridPanelBase.addButton( new Ext.Button(
+    {
+    	text: "Export Grid",
+    	handler: function()
+    	{
+    		var geoJSON = new OpenLayers.Format.GeoJSON();
+    		geoJSONText = geoJSON.write(cities.features);
+    		var geoJSONTextEscape = encodeURI(geoJSONText);
+    		var body = Ext.getBody();
+    		var frame = body.createChild(
+    		{
+    			tag: 'iframe',
+    			cls: 'x-hidden',
+    			id: 'hidden_iframe',
+    			name: 'hidden_iframe'
+    		});
+    		
+    		var form = body.createChild(
+    		{
+    			tag: 'form',
+    			cls: 'x-hidden',
+    			id: 'hidden_form',
+    			method: 'post',
+    			action: 'grid_out.php',
+    			target: '_blank'
+    		});
+    		
+    		var input = form.createChild(
+    		{
+    			tag: 'input',
+    			cls: 'x-hidden',
+    			id: 'hidden_input',
+    			name: 'jsondata',
+    			type: 'hidden',
+    			value: geoJSONTextEscape
+    		});
+    		
+    		form.dom.submit();
+    	}
+    }
+    ));
+    
+    //this listens for a double click and then move the map to that place
+    //so far the 5 is the best zoom
+	vgridPanelBase.on('rowdblclick', function()
+	{
+		fn_hideWin(popup);
+		vgridPanelBase.getSelectionModel().each(function(rec)
+		{
+			var feature = rec.get("feature");
+			map.setCenter(new OpenLayers.LonLat(feature.geometry.x,feature.geometry.y),5);
+			fn_hideWin(winGridBase);
+			createPopup(feature, cities, false, 1);
+			popupToggle = 1;
+		});
+    });
+    
+    vgridPanelBase.on('rowclick',  function(g, rowIdx,r)
+    {
+    	if (popup.isVisible())
+    	{
+    		fn_hideWin(popup);
+    	}
+    	rec = vectorstore.getAt(rowIdx);
+    	var feature = rec.get("feature");
+    	map.setCenter(new OpenLayers.LonLat(feature.geometry.x,feature.geometry.y),5);
+    	if (popup.isVisible())
+    	{
+    		fn_hideWin(popup);
+    	}
+    });
+    
+    //this we may want to move outside the function to just refresh the same grid each time
+    winGridBase= new Ext.Window(
+    {
+		id: winGridBaseCounter--,
+		width: 940,
+		height: 300,
+		resizable: true,
+		maximizable: true,
+		minWidth: 350,
+		minHeight: 200,
+		title: 'Map Gazetteer',
+		layout: 'border',
+		items: vgridPanelBase,
+		closeAction:'hide',
+		listeners:
+		{
+			'deactivate':function()
+			{
+				winGridBase.hide();
+			}
+		}
+	});
+
+  winGridBase.addButton(
+  {
+  	text: "Close",
+  	handler: function()
+  	{
+  		popupToggle = 1;
+  		fn_hideWin(winGridBase);
+  	}
+  });
+  
+  winGridBase.show();
+}             
+
+/******* End of Gazetteer Grid functionality ***************************************/
+
+
+
+/***********************************************************************************/
+/******** Measurement Display ******************************************************/
+/***********************************************************************************/
+//may want to add functionality to convert to imperial
+//first set up the container panel
+var measInfoPanel = new Ext.Panel(
+{
+	id: 'measInfoPanel',
+	autoScroll:true,
+	region: 'center'
+});
+
+//now for the function
+function fnMesShow(measResult)
+{
+	//as usual, clear out any existing instance of the window
+	fn_hideWin(measWin);
+	
+	try{measInfoPanel.remove(measPanel);}
+	catch(e){}
+	
+	var measString = "The measurement is: <br>";
+	measString = measString.concat(measResult);
+	measString = measString.concat(" kilometers");  
+	//temporary panel to hold the measurement
+	
+	measPanel = new Ext.Panel(
+	{
+		border: false, 
+		frame : false,
+		bodyStyle: bodyStylerText,
+		autoScroll:true,
+		html:measString
+	});
+	
+	measInfoPanel.add(measPanel);
+	measWinCounter++;
+	var measWinCounterName ='measWinCounter_'+ measWinCounter;
+	
+	measWin = new Ext.Window(
+	{
+		id: 'measWinCounterName',
+		width: 300,
+		height: 125,
+		resizable: true,
+		maximizable: true,
+		title: 'Measurement Result',
+		layout: 'fit',
+		items: measInfoPanel,
+		closeAction:'hide',
+		listeners:
+		{
+			'deactivate':function()
+			{
+				measWin.hide();
+			}
+		}
+	});
+	
+	measWin.addButton(
+	{
+		text: "Close",
+		handler: function()
+  		{
+  			fn_hideWin(measWin);
+  		}
+  	}); 
+  
+  //finally, show the window
+  measWin.show();   
+	        
+}	
+
+/***********************************************************************************/
+
+
+/*
+
+var kmlDownloadPanel = new Ext.Panel({
+	region: 'center',
+    height: 200,
+    width: 320,
+   // bodyPadding: 10,
+    title: 'Panel',
+    items: [
+        {
+            xtype: 'field',
+         //   disabled: true,
+          //  id: 'file'
+             		emptyText: 'Choose a name for the kml file',
+ 		fieldLabel: 'File'
+ 		vtype: 'json'
+
+        }
+    ]
+    });
+    
+    
+     kmlWin = new Ext.Window({
+	id: 'kmlWin',
+	width: 300,
+	height: 125,
+	resizable: true,
+	maximizable: true,
+	title: 'Choose Name',
+	layout: 'border',
+	items: kmlDownloadPanel,
+	closeAction:'hide' //otherwise closing the top will nerf the window
+	});
+
+  kmlWin.addButton(
+  {
+  	text: "Close",
+  	handler: function()
+  		{
+  			fn_hideWin(kmlWin);
+  		}
+  	}); 
+
+*/
+/***********************************************************************************/
+/******** createKmlExport **********************************************************/
+/***********************************************************************************/
+//this sets up the attributes needed for a decent .kml export form openlayers
+//they are done here to catch custom features and any changes a user may make
+
+function createKmlExport(cities)
+{
+	for (var i = 0; i< cities.features.length; i++)
+	{
+		cities.features[i].attributes.name = cities.features[i].attributes.en_name;
+		var desString =[];
+		desString = desString+kmlStringStart;
+		//can't forget to start the table
+		desString = desString+'<table border="1">';
+		
+		//this should never not happen
+		if ( cities.features[i].attributes.pid)
+		{
+			//only make links if the feature is in the pleiades network
+			if(!cities.features[i].attributes.pid.match(/-.*/))
+			{
+				desString = desString +"<tr><td>Pleiades ID: </td>" + "<td><a href='"+pleaBase+cities.features[i].attributes.pid+"' >"+  cities.features[i].attributes.pid + "</a></td></tr>";
+	        	desString = desString +"<tr><td>Pelagios: </td>" + "<td><a href='"+pelagApi+cities.features[i].attributes.pid+"'>"+  cities.features[i].attributes.pid + "</a></td></tr>";
+	    	}
+		
+			else
+			{
+				desString = desString + "<tr><td>Pleiades ID:</td>"+ "<td>" + cities.features[i].attributes.pid + "</td></tr>";
+			}
+		}
+	
+		if (cities.features[i].attributes.en_name)
+		{
+			desString = desString +"<tr><td>English Name:</td>"+ "<td>" + cities.features[i].attributes.en_name + "</td></tr>";
+		}
+	
+		if ( cities.features[i].attributes.gr_name)
+		{
+			desString = desString +"<tr><td>Greek Name:</td>"+ "<td>" + cities.features[i].attributes.gr_name + "</td></tr>";
+		}
+	
+		if ( cities.features[i].attributes.la_name)
+		{
+			desString = desString + "<tr><td>Latin Name:</td>"+ "<td>" + cities.features[i].attributes.la_name + "</td></tr>";
+		}
+	
+		if ( cities.features[i].attributes.featuretyp)
+		{
+			desString = desString + "<tr><td>Feature Type:</td>"+ "<td>" + cities.features[i].attributes.featuretyp + "</td></tr>";
+		}
+	
+		if ( cities.features[i].attributes.timeperiod)
+		{
+			desString = desString +"<tr><td>Time Period:</td>"+ "<td>" + cities.features[i].attributes.timeperiod + "</td></tr>";
+		}
+	
+		if ( cities.features[i].attributes.perseus_li)
+		{
+			desString = desString + "<tr><td>Perseus:</td>"+ "<td><a href='" + cities.features[i].attributes.perseus_li + "' >" + cities.features[i].attributes.perseus_li + "</a></td></tr>";
+		}
+	
+		if ( cities.features[i].attributes.wiki_link)
+		{
+			desString = desString + "<tr><td>Wikipedia:</td>"+ "<td><a href='" + cities.features[i].attributes.wiki_link + "' >" + cities.features[i].attributes.wiki_link + "</a></td></tr>";     
+		}
+	
+		desString = desString + '</table>';
+		desString = desString + kmlStringEnd;
+		cities.features[i].attributes.description = desString;
+	}
+	
+	//kmlWin.show();
+	
+	//now we have to create a hidden form so the browser will download the .kml file.
+	
+	var kmlex = new OpenLayers.Format.KML();
+	var kmlText = kmlex.write(cities.features);
+	var geoJSONTextEscape = encodeURI(kmlText);
+	var body = Ext.getBody();
+	var frame = body.createChild(
+	{
+		tag: 'iframe',
+		cls: 'x-hidden',
+		id: 'hidden_iframe',
+		name: 'hidden_iframe'
+	});
+
+	var form = body.createChild(
+	{
+    	tag: 'form',
+    	cls: 'x-hidden',
+    	id: 'hidden_form',
+    	method: 'post',
+    	action: 'downloaddatakml2.php',
+    	target: '_blank'
+    });
+
+	var input = form.createChild(
+	{
+    	tag: 'input',
+    	cls: 'x-hidden',
+    	id: 'hidden_input',
+    	name: 'jsondata',
+    	type: 'hidden',
+    	value: geoJSONTextEscape
+	});
+	
+	form.dom.submit();
+}
+ 
+
+/***********************************************************************************/
+
+
+
+/***********************************************************************************/
+/******** Things to be added / fixed / deleted *************************************/
+/***********************************************************************************/
+
+/*
+var featureStyles = new OpenLayers.StyleMap(
+{
+	"default": OpenLayers.Feature.Vector.style["default"],
+	"select": OpenLayers.Feature.Vector.style.select,
+	"hidden":
+	{
+		fillOpacity: 0.0,
+		strokeOpacity: 0.0
+    }
+ });
+  */
+
+/*
+       action = new Ext.Button({
+        text: 'Permalink',
+        handler: function(){
+            
+            var l = permalinkProvider.getLink();
+            var permalinkWindow = new Ext.Window({
+                title: 'Permalink to the current map state',
+                modal: true,
+                layout: 'fit',
+                width: 750,
+                height: 85,
+                closeAction:'hide',
+                plain: true,
+                resizable: false,
+				html:'<input type="text" size="250" style="font-family:tahoma,\'lucida grande\',arial,sans-serif;background-color: #FFFFFF;font-size:11px;border: none" onMouseOver="select();" value="' + l + '" />',
+                buttonAlign: 'center',
+                buttons: [{
+                    text: 'Close',
+                    handler: function(){
+                        permalinkWindow.hide();
+                    }
+                }]
+            });
+            permalinkWindow.show();
+        }
+    });
+  
+                     actions["permlink"] = action;
+*/
+
+/*
+var features = new Array();
+var places = new OpenLayers.Layer.Vector("places");
+*/
+
+/***********************************************************************************/
+
+
+
+/***********************************************************************************/
+/******** Program logic and runtime ************************************************/
+/***********************************************************************************/
+
+//First, create the map
+ 
+map = new OpenLayers.Map('map', options);
+
+//we will use a transparent file for the base so everything can be turned off if desired
+var baseLayer = new OpenLayers.Layer.Image(
+	'None',
+	'Transparent.png',
+	extent,
+	new OpenLayers.Size(200,100),
+	{
+		isBaseLayer:true,
+		displayInLayerSwitcher: false,
+		visibility: true
+	}
+);
+
+
+//now to create the layers indivudally
+//the coast is our base layer and as such has different options
+var coast = new OpenLayers.Layer.WMS(
+	"Coast Outline", 
+	baseUrl,
+	{layers: "coast_m",transparent: 'true'},
+	overOptions
+);
+
+opacLayers.push(coast);
+//all of the overlay layers with the exception of the cities require the same options.
+
+var elevation = new OpenLayers.Layer.WMS(
+	"Elevation Data",
+	baseUrl,
+	{layers: "background_el",transparent: 'true'},
+	overOptions
+);
+
+opacLayers.push(elevation);
+
+                    
+var hillshade = new OpenLayers.Layer.WMS(
+	"Hillshade Data",
+	baseUrl,
+	{layers: "background_hill",transparent: 'true'},
+	overOptions
+);
+     
+opacLayers.push(hillshade);
+
+                    
+var waterc = new OpenLayers.Layer.WMS(
+	"Water Courses",
+	baseUrl,
+	{layers: "watercourses_m",transparent: 'true'},
+	overOptions
+);
+
+opacLayers.push(waterc);
+
+                	
+var inlandw = new OpenLayers.Layer.WMS(
+	"Inland Water",
+	baseUrl,
+	{layers: "inlandwater_m",transparent: 'true'},
+	overOptions
+);
+
+opacLayers.push(inlandw);
+     
+                   
+var openw = new OpenLayers.Layer.WMS(
+	"Open Water",
+	baseUrl,
+	{layers: "openwater_m",transparent: 'true'},
+	overOptions
+);
+    
+opacLayers.push(openw);
+    
+                    
+var roadsw = new OpenLayers.Layer.WMS(
+	"Roads",
+	baseUrl,
+	{layers: "roads_m",transparent: 'true'},
+	overOptionsCulture
+);
+
+opacLayers.push(roadsw);
+
+
+//default hide this layer 
+roadsw.setVisibility(false);
+                    
+var urbw = new OpenLayers.Layer.WMS(
+	"Urban Areas",
+	baseUrl,
+	{layers: "urban_m",transparent: 'true'},
+	overOptionsCulture
+);
+
+opacLayers.push(urbw);
+
+//default hide this layer 
+urbw.setVisibility(false);
+                    
+var aquew = new OpenLayers.Layer.WMS(
+	"Aqueducts",
+	baseUrl,
+	{layers: "aqua_m",transparent: 'true'},
+	overOptionsCulture
+	);
+	
+opacLayers.push(aquew);
+	
+
+//default hide this layer 
+aquew.setVisibility(false);
+
+var pAllLayers = new OpenLayers.Layer.WMS(
+	"All Map Features",
+	baseUrl,
+	{layers: "all_m",transparent: 'true'},
+	overOptionsCulture
+	);
+	
+	opacLayers.push(pAllLayers);
+
+
+//default hide this layer
+pAllLayers.setVisibility(false);
+
+
+var AlexLayers = new OpenLayers.Layer.WMS(
+	"Empire of Alexander",
+	baseUrl,
+	{layers: "alexander_m",transparent: 'true'},
+	overOptionsPolitical
+	);
+	
+		opacLayers.push(AlexLayers);
+
+
+//default hide this layer
+AlexLayers.setVisibility(false);
+
+
+var persianLayer = new OpenLayers.Layer.WMS(
+	"Persian Empire",
+	baseUrl,
+	{layers: "persian_m",transparent: 'true'},
+	overOptionsPolitical
+	);
+
+		opacLayers.push(persianLayer);
+
+
+//default hide this layer
+persianLayer.setVisibility(false);
+
+
+var provBoundariesLayer = new OpenLayers.Layer.WMS(
+	"Roman Provincial Boundaries",
+	baseUrl,
+	{layers: "roman_provinces",transparent: 'true'},
+	overOptionsPolitical
+	);
+	
+			opacLayers.push(provBoundariesLayer);
+
+
+//default hide this layer
+provBoundariesLayer.setVisibility(false);
+
+var rome60Layer = new OpenLayers.Layer.WMS(
+	"Roman Empire 60 BCE",
+	baseUrl,
+	{layers: "rome_60",transparent: 'true'},
+	overOptionsPolitical
+	);
+
+			opacLayers.push(rome60Layer);
+
+
+//default hide this layer
+rome60Layer.setVisibility(false);
+
+
+//staying ugly here- this is to store connections for now
+
+var connections_l = new OpenLayers.Layer.Vector(
+	"Connections",
+	{projection: mapProjection}
+	);
+
+
+//this may be ugly, but it is useful for names
+var names_l = new OpenLayers.Layer.Vector(
+	"Names",
+	{
+		hideInLegend: true,
+		projection: mapProjection
+	});
+
+//this is also ugly, but this will hold temporary features for the wms getinfo so they do not automatically add to the features layer
+var citiesTemp = new OpenLayers.Layer.Vector(
+	"Features",
+	{
+		hideInLegend: true,
+		projection: mapProjection
+	});
+
+
+/*and now for an even uglier kludge. Since openlayers does not have a move labels option, what we are going to do is spawn labels 
+whenever a feature is added into a new layer. This layer will hold the pid of the spawner and will try to move
+on the finish of the spawner drag. We will set up an initial style based on feature type and keep the language context, but we will have
+the ability to indiividually change label properties by clicking on a tools button. The label should also be deleted with its feature. 
+*/
+
+
+
+
+var unioned = new OpenLayers.Layer.WMS(
+	"Static Labels",
+	baseUrl,
+	{layers: "unioned",transparent: 'true'},
+	overOptionsCulture
+	);
+
+unioned.setVisibility(false);
+
+
+
+
+
+//the database. The feature NS works but we are not sure why.... 
+ var cities = new OpenLayers.Layer.Vector(
+                 "Features",{
+                 hideInLegend: true,
+                 displayInLayerSwitcher: true,
+                 group: "culture",
+                 projection: mapProjection,
+                 //we want to default to no labels
+                 styleMap: new OpenLayers.StyleMap(new OpenLayers.Style(template,{context: contextBase, rules: rules}))
+                  });
+                  
+                  			opacLayers.push(cities);
+
+//events for the cities layer
+cities.events.on(
+{
+	"featureadded": function(evt){
+		feature = evt.feature;
+		currentFeature = feature;
+		//this is our fake pid. I guess it is somewhat possible that two people who want to share .json could generate a new feature at the exact same millisecond, but it isn't worth loosing sleep over.
+		if (feature.attributes.pid =='' || feature.attributes.pid == null)
+		{
+		feature.attributes.pid = String(0 - (new Date().getTime()));
+		}
+		feature.attributes.name = feature.attributes.searchrename;
+		if(feature.attributes.custom_name == null)
+		{
+		feature.attributes.custom_name = '';
+		}
+//		feature.attributes.description = "PID: " + feature.attributes.pid;
+		//if the values for times are null, it messes up the time function. We will default to ALL times to catch this
+		if (feature.attributes.timeperiod == null)
+		{
+			feature.attributes.timeperiod = 'ACHRL(*****)';
+		}
+		//set the missing languages here. We are just going to leave them blank, without any to be determined.
+		if (feature.attributes.en_name == null){
+		feature.attributes.en_name='';
+		}
+			if (feature.attributes.la_name == null){
+		feature.attributes.la_name='';
+		}
+				if (feature.attributes.gr_name == null){
+		feature.attributes.gr_name='';
+		}
+		
+	},
+	"featureselected": function(e){
+		fn_hideWin(popup);
+		//this prevents the synced grid from creating a popup. De-syncing and re-syncing the grid caused a lot of problems
+		if (popupToggle == 1)
+		{
+			createPopup(e.feature, cities, false, 1);
+		}
+	},
+	"featureunselected": function(){
+				fn_hideWin(popup);
+	}
+});
+
+//store that holds all of the features in the cities layer
+
+var vectorstore = new GeoExt.data.FeatureStore(
+{
+	title: 'Features',
+	layer: cities,
+	fields:fieldDefs,
+	autoLoad: false
+});
+
+//add all of the layers to the map
+map.addLayers(
+[
+	baseLayer, 
+	coast, 
+	elevation, 
+	hillshade, 
+	waterc, 
+	inlandw, 
+	openw, 
+	roadsw, 
+	aquew, 
+	urbw,
+	AlexLayers,
+	persianLayer,
+	provBoundariesLayer,
+	rome60Layer,
+		pAllLayers, 
+		cities,
+		unioned
+]);               
+
+
+   // toggleGroup: "tools",
+	 //       tooltip: "measurement",
+	        // check item options
+	   //     group: "tools"
+
+
+/*
+{
+	text: 'Pleiades Names',
+	enableToggle: true,
+	pressed: true,
+    toggleGroup: toggleGroup,
+    handler: function(toggled)
+    {
+    	if (toggled)
+    	{
+    		nameChanger(cities, contextBase);
+        } 
+    }
+
+
+*/
+
+/***********************************************************************************/
+/******** Main window toolbar menu  ************************************************/
+/***********************************************************************************/
+//toggle here since we don't ever want 2 languages active
+//to select Pleiades
+//since this is the defaut, this will start as pressed
+action = new Ext.Button(
+{
+	text: 'Pleiades Names',
+	pressed: true,
+		        checked: true,
+    toggleGroup: toggleGroup,
+    group: toggleGroup,
+    allowDepress: false,
+    handler: function(toggled)
+    {
+    	if (toggled)
+    	{
+    		nameChanger(cities, contextBase);
+        } 
+    }
+});
+actions["base"] = action;
+
+//to select Custom names
+action = new Ext.Button(
+{
+	text: 'Custom Names',
+    toggleGroup: toggleGroup,
+    group: toggleGroup,
+    allowDepress: false,
+        handler: function(toggled)
+    {
+    	if (toggled)
+    	{
+    		nameChanger(cities, contextCustom);
+        } 
+    }
+});
+actions["custom"] = action;
+
+//to select english
+action = new Ext.Button({
+    text: 'English Labels',
+    toggleGroup: toggleGroup,
+    group: toggleGroup,
+    allowDepress: false,
+        handler: function(toggled){
+        if (toggled) {
+        nameChanger(cities, contextEn);
+        //redraw here
+        } 
+    }
+});
+actions["english"] = action;
+
+//to select greek
+action = new Ext.Button({
+    text: 'Greek Labels',
+            toggleGroup: toggleGroup,
+    group: toggleGroup,
+    allowDepress: false,
+    handler: function(toggled){
+        if (toggled) {
+        nameChanger(cities, contextGr);
+        }
+    }
+});
+actions["greek"] = action;
+
+//to select latin
+action = new Ext.Button({
+    text: 'Latin Labels',
+    toggleGroup: toggleGroup,
+    group: toggleGroup,
+    allowDepress: false,
+        handler: function(toggled){
+        if (toggled) {
+        nameChanger(cities, contextLa);
+        } 
+    }
+});
+actions["latin"] = action;
+
+//this enables the map numbers label
+action = new Ext.Button({
+    text: 'Map Numbers',
+    toggleGroup: toggleGroup,
+    group: toggleGroup,
+    allowDepress: false,
+        handler: function(toggled){
+        if (toggled) {
+                makeMapNumbers(cities);
+                        vectorstore.loadData(cities.features, false)
+               nameChanger(cities, contextMa);
+        }
+    }
+});
+actions["mapnum"] = action;
+
+//to select none
+action = new Ext.Button({
+    text: 'No Labels',
+    toggleGroup: toggleGroup,
+    group: toggleGroup,
+    allowDepress: false,
+        handler: function(toggled){
+        if (toggled) {
+               nameChanger(cities, contextNo);
+        }
+    }
+});
+actions["none"] = action;
+
+//main item to hold all of the language options
+
+
+//for now the array value of the changing time is hardcoded in. We will have to change this if we expand the time offerings
+//again more kludging here. The version of extjs that plays nicely with geoext does not have a check box state function.
+//therefore we are using the display property of our custom object to do double duty.
+//move this to the top later
+//we can make a function capture the behavior here
+
+var arcButton = new Ext.menu.CheckItem(new Ext.Button({
+    text: 'Archaic',
+    handler: function(toggled){
+    if (toggled) {
+    if (timeContainer[0].dispT == false)
+    {
+    timeContainer[0].dispT = true;
+    }
+    else timeContainer[0].dispT = false;
+    timeChanger(cities, timeContainer);
+    }
+    }
+}));
+timeArry.push(arcButton);
+
+var classicButton = new Ext.menu.CheckItem(new Ext.Button({
+    text: 'Classical',
+    id: 'Classical',
+     handler: function(toggled){
+    if (toggled) {
+    if (timeContainer[1].dispT == false)
+    {
+    timeContainer[1].dispT = true;
+    }
+    else timeContainer[1].dispT = false;
+    timeChanger(cities, timeContainer);
+    }
+    }
+}));
+timeArry.push(classicButton);
+
+var helButton = new Ext.menu.CheckItem(new Ext.Button({
+    text: 'Hellenistic',
+       handler: function(toggled){
+    if (toggled) {
+    if (timeContainer[2].dispT == false)
+    {
+    timeContainer[2].dispT = true;
+    }
+    else timeContainer[2].dispT = false;
+    timeChanger(cities, timeContainer);
+    }
+    }
+}));
+timeArry.push(helButton);
+
+var romButton = new Ext.menu.CheckItem(new Ext.Button({
+    text: 'Roman',
+      handler: function(toggled){
+    if (toggled) {
+    if (timeContainer[3].dispT == false)
+    {
+    timeContainer[3].dispT = true;
+    }
+    else timeContainer[3].dispT = false;
+    timeChanger(cities, timeContainer);
+    }
+    }
+}));
+timeArry.push(romButton);
+
+var latButton = new Ext.menu.CheckItem(new Ext.Button({
+    text: 'Late',
+     handler: function(toggled){
+    if (toggled) {
+    if (timeContainer[4].dispT == false)
+    {
+    timeContainer[4].dispT = true;
+    }
+    else timeContainer[4].dispT = false;
+    timeChanger(cities, timeContainer);
+    }
+    }
+}));
+timeArry.push(latButton);
+
+  
+//probably will move this to the initalization above
+for (var i = 0; i < timeArry.length; i++)
+{
+        timeArry[i].setChecked(true);
+        }
+
+        
+//map tools	    
+
+var lineDrawControl = new OpenLayers.Control.DrawFeature(cities,
+                        OpenLayers.Handler.Path,
+                        {displayClass: 'pointButton', title: 'Add point',
+	        featureAdded:function(feature) {
+	        	        fn_hideWin(popup);
+	        cities.removeFeatures([feature]);
+	        	                   createPopup(feature, cities, true, 3);
+
+//	        win.show();
+	        
+	        },
+	        handlerOptions: {style: sty}
+});
+var polyDrawControl = new OpenLayers.Control.DrawFeature(
+		cities,
+		OpenLayers.Handler.Polygon,
+		{
+			displayClass: 'pointButton',
+			title: 'Add Polygon',
+			featureAdded:function(feature)
+			{
+				        fn_hideWin(popup);
+
+
+				cities.removeFeatures([feature]);
+				currentFeatureType = 'polygon';
+					                   createPopup(feature, cities, true, 3);
+
+			},
+			handlerOptions: {style: sty}
+		}
+	);
+var dragControl = new OpenLayers.Control.DragFeature(cities);	
+var pointDrawControl = new OpenLayers.Control.DrawFeature(cities, OpenLayers.Handler.Point, {displayClass: 'pointButton', title: 'Add point',
+	        featureAdded:function(feature) {
+	        //there is a problem if the user double clicks. This should solve it
+	        fn_hideWin(popup);
+	        //since we need to transform the object into a string
+	    
+	        //this might seem silly, but removing the feature allows for editing etc before adding
+	        //otherwise the feature store does not seem to get the values
+	        
+	    //    formPanelAdd.getForm().setValues({addlong:feature.geometry.x, addlat:feature.geometry.y });
+	    
+	      currentFeature = feature;
+
+	        cities.removeFeatures([feature]);
+	        
+	                   createPopup(feature, cities, true, 3);
+	      //  win.show();
+
+            },
+	        handlerOptions: {style: sty}});
+	
+var defaultAction = new GeoExt.Action({
+	        text: "Select Feature / Navigate",
+	        control: new OpenLayers.Control.SelectFeature(cities),
+	        map: map,
+	        activateOnEnable: true, //for switching
+	        // button options
+	        toggleGroup: "tools",
+	        allowDepress: false,
+	        pressed: true,
+	        tooltip: "navigate",
+	        // check item options
+	        group: "tools",
+	        checked: true
+	    });
+
+action = new GeoExt.Action({
+	        text: "Measure",
+	        toggleGroup: "tools",
+	        control: new OpenLayers.Control.Measure(OpenLayers.Handler.Path, {
+	        	          handlerOptions: {style: sty},
+	        eventListeners: {
+	        measure: function(evt) {
+	        measResult = evt.measure;
+	        fnMesShow(measResult);
+	   
+	        }
+	        }
+	        }),
+	        map: map,
+	        // button options
+	        toggleGroup: "tools",
+	        allowDepress: false,
+	        tooltip: "measurement",
+	        // check item options
+	        group: "tools"
+	    });
+actions["mes"] = action;
+
+action = new GeoExt.Action({
+	        text: "Drag Feature",
+	        toggleGroup: "tools",
+	        control: dragControl,
+	        map: map,
+	        // button options
+	        toggleGroup: "tools",
+	        allowDepress: false,
+	        tooltip: "drag feature",
+	        // check item options
+	        group: "tools"
+	    });
+actions["drag"] = action;
+
+action = new GeoExt.Action({
+	        text: "Draw Feature",
+	        toggleGroup: "tools",
+	        control: pointDrawControl,
+	        map: map,
+	        // button options
+	        toggleGroup: "tools",
+	        allowDepress: false,
+	        tooltip: "draw feature",
+	        // check item options
+	        group: "tools"
+	    });
+actions["draw"] = action;
+
+action = new GeoExt.Action({
+        text: "Draw Line Work",
+	        toggleGroup: "tools",
+         control: lineDrawControl,
+	        map: map,
+	        // button options
+	        toggleGroup: "tools",
+	        allowDepress: false,
+	        tooltip: "draw feature",
+	        // check item options
+	        group: "tools"
+});
+actions["drawLine"] = action;
+
+
+action = new GeoExt.Action({
+	text: "Draw Polygon Areas",
+	toggleGroup: "tools",
+	control:polyDrawControl,
+	map: map,
+	// button options
+	toggleGroup: "tools",
+	allowDepress: false,
+	tooltip: "draw feature",
+	// check item options
+	group: "tools"
+});
+actions["drawpoly"] = action;
+
+
+formPanelPrint = new Ext.FormPanel(
+		{
+			id: 'formPanelPrint',
+			autoScroll: true,
+			bodyStyle: bodyStylerText,
+			items: [
+			/*{
+            xtype: "textfield",
+            name: "rotation",
+            fieldLabel: "Rotation",
+            id: "formPanelPrintRotation",
+            plugins: new GeoExt.plugins.PrintPageField({
+                printPage: printPage
+            })
+            },*/
+			{
+				xtype: "textfield",
+				width:200,
+				name: "formPanelPrintTitle",
+				fieldLabel: "Map Title",
+				id: "formPanelPrintTitle"
+			},
+			{
+				xtype: "textarea",
+								width:200,
+								height: 300,
+				name: "formPanelPrintComment",
+				fieldLabel: "Comments",
+				id: "formPanelPrintComment"
+			}
+			]
+		});
+		
+		
+//printer button	        		
+var printButton = new Ext.Button(
+{
+	text: "Print",
+	handler: function()
+	{
+		//deactivate controls or mapfish croaks on the control handlers
+		lineDrawControl.deactivate();
+		polyDrawControl.deactivate();
+		dragControl.deactivate();
+		pointDrawControl.deactivate();
+		printExtent.page.setRotation(0);
+		printExtent.page.fit(mapPanel, {mode: "screen"});
+		printExtent.show();
+		
+		//need to make a form to get title and comments
+		
+		formPanelPrint.getForm().setValues(
+		{
+			formPanelPrintTitle:'',
+			formPanelPrintComment:''
+		});	
+
+		
+		printWin= new Ext.Window(
+		{
+			width: 350,
+			height: 450,
+			title: 'Print a section of the map as a .pdf file. You can fill out the optional information below and move /resize the orange box to cover the desired print area.',
+			layout: 'fit',
+			closable: false,
+			items: formPanelPrint,
+			closeAction:'hide',
+			 //otherwise closing the top will nerf the window
+			 listeners:
+			 {
+			 	'close':function()
+			 	{
+			 		printExtent.hide();
+			 	},
+			 	'hide':function()
+			 	{
+			 		printExtent.hide();
+			 	},
+			 	'deactivate':function()
+			 	{
+			 		printExtent.hide();
+			 		printWin.hide();
+			 	}
+			 }
+		});
+		
+		printWin.addButton(
+		{
+			text: "Print",
+			handler: function()
+			{
+				printMask.show();
+				printExtent.page.customParams.mapTitle = formPanelPrint.getForm().findField("formPanelPrintTitle").getValue();
+				printExtent.page.customParams.comment = formPanelPrint.getForm().findField("formPanelPrintComment").getValue();
+				printExtent.page.customParams.rotation = printExtent.page.rotation;
+				printExtent.print();
+				printExtent.hide();
+				fn_hideWin(printWin);
+				//defaultAction.activate();
+			}
+		});
+		
+		printWin.addButton(
+		{
+			text: "Close",
+			handler: function()
+			{
+				printExtent.hide();
+				fn_hideWin(printWin);
+								//defaultAction.activate();
+			}
+		});
+		
+		printWin.show();
+	}
+});
+ 
+
+//exporters
+//to csv 
+action = new Ext.Button(
+ {
+ 	text: "Export Map as .csv",
+ handler: function(){
+ 
+ var geoJSON = new OpenLayers.Format.GeoJSON();
+    geoJSONText = geoJSON.write(cities.features);
+
+var geoJSONTextEscape = encodeURI(geoJSONText);
+
+var body = Ext.getBody();
+var frame = body.createChild({
+    tag: 'iframe',
+    cls: 'x-hidden',
+    id: 'hidden_iframe',
+    name: 'hidden_iframe'
+});
+
+var form = body.createChild({
+    tag: 'form',
+    cls: 'x-hidden',
+    id: 'hidden_form',
+    method: 'post',
+    action: 'downloaddata_csv.php',
+    target: '_blank'
+});
+
+var input = form.createChild({
+    tag: 'input',
+    cls: 'x-hidden',
+    id: 'hidden_input',
+    name: 'jsondata',
+    type: 'hidden',
+    value: geoJSONTextEscape
+});
+
+form.dom.submit();
+
+
+ }
+ 
+ 
+ });
+actions["exportcsv"] = action;
+
+
+//to json 
+action = new Ext.Button(
+ {
+ 	text: "Export Map as .json",
+ handler: function(){
+ 
+ var geoJSON = new OpenLayers.Format.GeoJSON();
+    geoJSONText = geoJSON.write(cities.features);
+
+var geoJSONTextEscape = encodeURI(geoJSONText);
+
+var body = Ext.getBody();
+var frame = body.createChild({
+    tag: 'iframe',
+    cls: 'x-hidden',
+    id: 'hidden_iframe',
+    name: 'hidden_iframe'
+});
+
+var form = body.createChild({
+    tag: 'form',
+    cls: 'x-hidden',
+    id: 'hidden_form',
+    method: 'post',
+    action: 'downloaddata2.php',
+    target: '_blank'
+});
+
+var input = form.createChild({
+    tag: 'input',
+    cls: 'x-hidden',
+    id: 'hidden_input',
+    name: 'jsondata',
+    type: 'hidden',
+    value: geoJSONTextEscape
+});
+
+form.dom.submit();
+
+
+ }
+ 
+ 
+ });
+actions["exportjson"] = action;
+
+//to kml
+action = new Ext.Button({
+ 
+ //may have to copy the layer to a new layer then change the attributes around for this kind of thing
+ 
+
+ text: "Export Map as .kml",
+ handler: function(){
+ 
+   createKmlExport(cities);
+
+ 
+ }
+ 
+ 
+ });
+actions["exportkml"] = action;
+
+
+//Gazetteer button
+var gridButton = new Ext.Button({
+  text: "Interactive Map Gazetteer",
+            handler: function() {
+            //vectorstore.reload();
+            //basicMask.show();
+fnCreateGrid();
+            }
+            });
+
+//restore to original zoom
+var mapZoomButton = new Ext.Button({
+  text: "Original Zoom",
+            handler: function() {
+map.setCenter(new OpenLayers.LonLat(zoomFeature.geometry.x,zoomFeature.geometry.y),1); //zoom map to new feature
+            }
+            });
+
+//help button
+var mapHelpButton = new Ext.Button({
+  text: "Help",
+            handler: function() {
+            helpWin.show();
+            }
+            });
+
+
+//our about text
+var aboutButton = new Ext.Button({
+  text: "About",
+            handler: function() {
+    aboutWin.show();
+            }
+            });
+            
+
+// upload input
+
+//still in the toolbar above, but broken out here for readability. 
+
+ var myuploadform = new Ext.FormPanel(
+ {
+ 	fileUpload: true,
+ 	bodyStyle: bodyStylerText,
+ 	border: false, 
+ 	method: 'post',
+    frame : false,
+ 	labelWidth: 50,
+ 	defaults:
+ 	{
+ 		anchor: '95%',
+ 		allowBlank: false,
+ 		msgTarget: 'side'
+ 	},
+ 	items:[
+ 	{
+ 		xtype: 'fileuploadfield',
+ 		name: 'filedata',
+ 		emptyText: 'Select a .json file to upload...',
+ 		fieldLabel: 'File',
+ 		vtype: 'json',
+ 		buttonText: 'Browse'
+ 	}]
+ });
+ 
+
+//no real need to make this in a function 
+ var upWin = new Ext.Window(
+ {
+ 	id: 'upWin',
+    width: 600,
+	height: 120,
+	resizable: true,
+	maximizable: true,
+	title: 'Upload .json File',
+	layout: 'fit',
+	items: myuploadform,
+	closeAction:'hide',
+		listeners:
+	{
+		'deactivate':function()
+		{
+			upWin.hide();
+		}
+	}
+});
+
+upWin.addButton(
+{
+	text: 'Upload',
+	handler: function()
+	{
+		if(myuploadform.getForm().isValid())
+		{
+			form_action=1;
+			myuploadform.getForm().submit(
+			{
+				url: 'handleupload.php',
+				waitMsg: 'Uploading file...',
+				failure : function(form,action){
+				      var result = action.result;
+				              Ext.MessageBox.alert('Failure','The .json failed to load');
+
+				},
+				success: function(form,action)
+				{
+					msg('Success', 'File Uploaded');
+					//we pack the resulting json for the features into a server response that is itself json under the heading "data"
+					try
+					{
+					//we need another store here to extract any feature ID and other information. This needs to then go to a new page that preserves information
+					//that is there and adds any new information that is lacking from the database. At the moment this can only handle our json, so it should be expanded
+					//to deal with other json
+						store.loadData(geojson_format.read(action.result.data));
+						var rows = String(store.getCount());
+						for (var j = 0; j < rows; j++)
+						{
+							var featadd = store.getAt(j);
+							var feature = featadd.get("feature");
+							addCityFeature(cities, feature);
+						}
+			
+			
+					} 
+					
+					
+					catch(e)
+					{}
+				}
+			});
+		}
+	}
+});
+
+upWin.addButton(
+{
+	text: "Close",
+	handler: function()
+	{
+		fn_hideWin(upWin);
+	}
+}); 
+  
+
+
+//Button to trigger upload text
+var upButton = new Ext.Button(
+{
+	text: "Upload",
+	handler: function()
+	{
+		upWin.show();
+	}
+});
+
+
+
+
+var legendStore = new GeoExt.data.LayerStore({});
+var legendPanel = new GeoExt.LegendPanel({});
+
+var legendButton = new Ext.Button({
+  text: "Map Legend",
+            handler: function() {
+            
+             legendStore = new GeoExt.data.LayerStore({
+    layers: [
+    cities,
+    elevation, 
+    waterc, 
+    inlandw, 
+    openw, 
+    roadsw, 
+    aquew,
+    AlexLayers,
+	persianLayer,
+	provBoundariesLayer,
+	rome60Layer]
+});
+
+             legendPanel = new GeoExt.LegendPanel({
+    layerStore: legendStore,
+    autoScroll: true,
+    //region: 'south',
+    //height: 100,
+    //width: 100,
+    dynamic: true,
+    defaults: {
+    style: 'padding:5px',
+    baseParams: {
+    FORMAT: 'image/png',
+    LEGEND_OPTIONS: 'forceLabels:on'
+    }
+    }
+});
+
+legendWin = new Ext.Window({
+//	id: 'legendWin',
+	width: 400,
+	height: 500,
+	resizable: true,
+	maximizable: true,
+	title: 'Map Legend',
+	layout: 'fit',
+	items: legendPanel,
+	closeAction:'hide',
+		listeners:
+	{
+		'deactivate':function()
+		{
+			legendWin.hide();
+		}
+	}
+	});
+
+  legendWin.addButton(
+  {
+  	text: "Close",
+  	handler: function()
+  		{
+  			fn_hideWin(legendWin);
+  		}
+  	}); 
+
+  	
+            
+    legendWin.show();
+            }
+            });
+
+            
+//map scale - directly from the geoext example
+
+    var scaleStore = new GeoExt.data.ScaleStore({map: map});
+    var zoomSelector = new Ext.form.ComboBox({
+        store: scaleStore,
+        emptyText: "Scale",
+        tpl: '<tpl for="."><div class="x-combo-list-item">1 : {[parseInt(values.scale)]}</div></tpl>',
+        editable: false,
+        triggerAction: 'all', // needed so that the combo box doesn't filter by its current content
+        mode: 'local' // keep the combo box from forcing a lot of unneeded data refreshes
+    });
+
+    zoomSelector.on('select', 
+        function(combo, record, index) {
+            map.zoomTo(record.data.level);
+        },
+        this
+    );     
+
+    map.events.register('zoomend', this, function() {
+        var scale = scaleStore.queryBy(function(record){
+            return this.map.getZoom() == record.data.level;
+        });
+
+        if (scale.length > 0) {
+            scale = scale.items[0];
+            zoomSelector.setValue("1 : " + parseInt(scale.data.scale));
+        } else {
+            if (!zoomSelector.rendered) return;
+            zoomSelector.clearValue();
+        }
+    });            
+            
+            
+
+
+
+//toolbar buttons
+//here is where all the push requests will go- this enables us to quickly change their format            
+
+//scale
+toolbarItems.push("Map Scale:");
+toolbarItems.push(zoomSelector);
+toolbarItems.push("-");
+
+//zoom
+toolbarItems.push(mapZoomButton);
+toolbarItems.push("-");
+
+
+toolbarItems.push({
+	        text: "File",
+	        menu: new Ext.menu.Menu(
+	        {
+	            items: [
+	            {
+	            	text: 'Export',
+	            	menu:
+	            	{
+	            	items: [
+	            	new Ext.menu.Item(actions["exportcsv"]),
+	                new Ext.menu.Item(actions["exportjson"]),
+	                new Ext.menu.Item(actions["exportkml"])
+	                ]
+	            }
+	            },
+	            new Ext.menu.Item(printButton),
+	            new Ext.menu.Item(upButton)
+	            ]
+	        })
+	    });
+toolbarItems.push("-");
+
+//timeperiods
+toolbarItems.push({
+        text: "Time Period(s)",
+        menu: new Ext.menu.Menu({
+            items: [
+            timeArry
+            ]
+        })
+    });
+toolbarItems.push("-");
+
+//labels
+toolbarItems.push({
+        text: "Labels",
+        menu: new Ext.menu.Menu({
+            items:
+            [
+            	new Ext.menu.CheckItem(actions["base"]),
+            	new Ext.menu.CheckItem(actions["custom"]),
+            	new Ext.menu.CheckItem(actions["english"]),
+            	new Ext.menu.CheckItem(actions["greek"]),
+            	new Ext.menu.CheckItem(actions["latin"]),
+            	new Ext.menu.CheckItem(actions["mapnum"]),
+            	new Ext.menu.CheckItem(actions["none"])
+            ]
+        })
+    });            
+toolbarItems.push("-");
+
+
+//tools
+toolbarItems.push({
+	        text: "Map Tools",
+	        menu: new Ext.menu.Menu({
+	            items: [
+	                new Ext.menu.CheckItem(defaultAction),
+	                new Ext.menu.CheckItem(actions["mes"]),
+	                new Ext.menu.CheckItem(actions["drag"]),
+	                new Ext.menu.CheckItem(actions["draw"]),
+	             	new Ext.menu.CheckItem(actions["drawLine"]),
+	                new Ext.menu.CheckItem(actions["drawpoly"])
+	             // for now this seems a bit useless   new Ext.menu.Item(actions["permlink"])
+	                ]
+	                })
+	        		});
+toolbarItems.push("-");
+
+
+//gazetteer
+toolbarItems.push(gridButton);
+toolbarItems.push("-");
+
+//legend
+toolbarItems.push(legendButton);
+toolbarItems.push("-");
+
+
+//help
+toolbarItems.push(mapHelpButton);
+toolbarItems.push("-");
+
+//about
+toolbarItems.push(aboutButton);
+toolbarItems.push("-");
+
+
+//test time
+
+  var timeSlider =  new Ext.Slider({
+        width: 400,
+        increment: 10,
+        minValue:  -1200,
+        maxValue: 1200,
+        plugins: new Ext.slider.Tip()
+    });
+
+var timeSliderPanelLeft = new Ext.Panel({
+	region: 'west',
+    height: 40,
+    width: 40,
+		bodyStyle: bodyStyler,
+    html:'test'
+    });
+    
+
+var timeSliderPanelCenter = new Ext.Panel({
+	region: 'center',
+    height: 40,
+    width: 450,
+		bodyStyle: bodyStyler,
+    items: timeSlider
+    });
+
+var timeSliderPanelRight = new Ext.Panel({
+	region: 'east',
+    height: 40,
+    width: 40,
+		bodyStyle: bodyStyler,
+    html:'test'
+    });
+    
+    
+    var timeSliderPanel = new Ext.Panel({
+	//region: 'center',
+	layout: 'border',
+    height: 40,
+    width: 550,
+		bodyStyle: bodyStyler,
+   //items: [timeSliderPanelLeft, timeSliderPanelCenter, timeSliderPanelRight]
+    items: timeSliderPanelCenter
+      });
+        
+    
+
+
+
+toolbarItems.push({
+	        text: "Time Slider",
+	        menu: new Ext.menu.Menu({
+	            items: timeSliderPanel
+	                })
+	        		});
+toolbarItems.push("-");
+
+
+
+/******** End Main window toolbar menu  ********************************************/
+
+
+
+
+/************************************************************************************/
+/******** Main map pannel ***********************************************************/
+/************************************************************************************/
+
+//get the geoext mappanel together     
+var mapPanel = new GeoExt.MapPanel(
+{
+	id: 'mapPanel',
+	region: 'center',
+	height: 300,
+	width: 600,
+	extent: extent,
+	map: map,
+	//no reason to collapse the map- it is the point of the application
+	collapsible: false,
+//	title: 'Map',
+	tbar: toolbarItems,
+	    stateId: "map",
+	     plugins: [printExtent],
+    prettyStateKeys: true // for pretty permalinks
+
+});
+
+//store for the legends. Anything we want to show individually in the display goes here
+
+//this did not seem to work in the big layers object above
+//compass rose
+var n_arrow = new OpenLayers.Layer.Vector("Compass rose and copyright", 
+                      {
+                      	displayInLayerSwitcher: false,
+                      	'attribution': "<img src='/awmc/images/awmc_rose2.png' width='84' height='100' align='right'/><br><br>"
+                      });
+                    
+map.addLayer(n_arrow);
+
+var coast_o = new OpenLayers.Layer.WMS( "Locator Map",
+	overUrl,
+	{layers: "over_m"},
+	{maxExtent: new OpenLayers.Bounds( -31.265750, -2.461050, 112.898610, 81.857360)});
+                    
+var water_o = new OpenLayers.Layer.WMS( "Locator Water", 
+                    overUrl,
+                    {layers: "openwater_over_m"},
+                    {maxExtent: new OpenLayers.Bounds( -31.265750, -2.461050, 112.898610, 81.857360)
+                    });
+//we only want one zoom so a user can see where in the world they are at any given moment
+var o_options = {
+	numZoomLevels: 2, 
+	layers: [coast_o]
+};
+
+//various map controls
+map.addControl(new OpenLayers.Control.OverviewMap({mapOptions: o_options}));
+var scaleline = new OpenLayers.Control.ScaleLine();
+map.addControl(scaleline);
+map.addControl(new OpenLayers.Control.MousePosition({formatOutput: formatLonlats}));
+var selectCtrl = new OpenLayers.Control.SelectFeature(cities);
+map.addControl(selectCtrl);
+
+/************************************************************************************/
+
+
+/************************************************************************************/
+/******** Wms info control **********************************************************/
+/************************************************************************************/
+//This is for selecting the main Pleiades layer that houses all the features  
+var info = new OpenLayers.Control.WMSGetFeatureInfo(
+{
+	url: baseUrl,
+	title: 'Identify features by clicking',
+	//lets go for something big here...    maxFeatures: 1,
+	maxFeatures: 500,
+	queryVisible: true,
+	layers: [pAllLayers,urbw],
+	eventListeners:
+	{
+		getfeatureinfo: function(event)
+		{
+			//hide the window if you don't have anything
+			fn_hideWin(winWms);
+			popuptext = event.text;
+			var textsend = String(popuptext);
+			textsend = textsend.replace(/\s+/gm,'');
+			textsend = textsend.replace(/(\r\n|\n|\r)/gm,'');
+			popupanchor = map.getLonLatFromPixel(event.xy);
+			
+			if (textsend.length > 2)
+			{
+				fn_hideWin(popup);
+				createPopup2(textsend, popupanchor);
+			}
+		}
+	}
+});
+        
+map.addControl(info);
+info.activate();
+
+/******* end wms info control *******************************************************/
+
+  
+
+
+/***********************************************************************************/
+/******** Search panel and functionality  ******************************************/
+/***********************************************************************************/
+
+
+var reader = new GeoExt.data.FeatureReader({},fieldDefs);
+
+var store = new GeoExt.data.FeatureStore({
+    reader: reader,
+    fields: fieldDefs,
+    autoLoad: false,
+    listeners:
+    {
+    	'load': function()
+    	{
+    		basicMask.hide();
+    	}
+	}
+});
+
+var gridPanel = new Ext.grid.GridPanel(
+{
+	title: "Results. Double click to add a feature to the map or use the buttons below",
+    height: 500,
+    width: 800,
+    columnLines: true,
+    buttonAlign :'left',
+    forceFit: true,
+    region:"center",
+    bbar:[ 
+    	{xtype: 'tbfill'},
+    	myTextItem
+    	],
+    store: store,
+    columns: [
+    {
+    	header: "Pleiades Name",
+    	width: 100,
+    	dataIndex: "basename",
+    	sortable: true
+    },
+    {
+    	header: "English Name",
+    	width: 100,
+    	dataIndex: "en_name",
+    	sortable: true
+    },
+    {
+    	header: "Type",
+    	width: 100,
+    	dataIndex: "featuretyp",
+    	sortable: true
+    },
+    {
+    	header: "Time Period",
+    	width: 100,
+    	dataIndex: "timeperiod",
+    	sortable: true
+    },
+    {
+    	header: "Greek Name",
+    	width: 100,
+    	dataIndex: "gr_name",
+    	sortable: true
+    },
+    {
+    	header: "Latin Name",
+    	width: 100,
+    	dataIndex: "la_name",
+    	sortable: true
+    },
+    {
+    	header: "Pleiades ID",
+    	width: 100,
+    	dataIndex: "pid",
+    	sortable: true
+    }
+    ],
+    sm: new GeoExt.grid.FeatureSelectionModel()
+});
+
+gridPanel.addButton(
+{
+	text: "Add A Feature To Map",
+	handler: function()
+	{
+		gridPanel.getSelectionModel().each(function(rec)
+		{
+			var feature = rec.get("feature");
+			addCityFeature(cities, feature);
+		})
+	},
+	scope: gridPanel
+});
+
+var bigResultAlert = new Ext.Window({});
+
+var bigResultPanel = new Ext.Panel(
+{
+	id: 'bigResultPanel',
+	bodyStyle: bodyStylerText,
+	autoScroll:true,
+	    border: false, 
+    frame : false,
+	html:'You are attempting to add a large number of features to the map which could severely impact performance. You may wish to consider narrowing your criteria.'
+}); 
+
+
+gridPanel.addButton(
+{
+	text: "Add All Results To Map",
+	handler: function()
+	{
+	//basicMask.show();
+		var rows = gridPanel.getStore().getCount( );
+		//arbitrary
+		if(gridPanel.getStore().getCount( ) > 500){
+		
+		bigResultAlert = new Ext.Window({
+                modal: true,
+                title: 'Warning',
+                layout: 'fit',
+                 bodyStyle: bodyStylerText,
+                width: 250,
+                height: 200,
+                closeAction:'hide',
+                plain: true,
+                resizable: false,
+				items:bigResultPanel,
+					listeners:
+	{
+		'deactivate':function()
+		{
+			bigResultAlert.hide();
+		}
+	},
+				buttons: [
+                {
+                    text: 'Return to Search',
+                    handler: function(){
+				fn_hideWin(bigResultAlert);
+				}
+                    },
+                    {
+                    text: 'Continue Anyway',
+                    handler: function(){
+                    		for (var i = 0; i < rows; i++)
+                    		{
+			var featadd = store.getAt(i);
+			var feature = featadd.get("feature");
+			addCityFeature(cities, feature);
+		}
+						fn_hideWin(bigResultAlert);
+
+                    
+                    
+                    }
+                }]
+            }
+        );
+bigResultAlert.show();
+		
+			//when we are done, hide the mask
+	//basicMask.hide();
+
+	}
+	else{
+	for (var i = 0; i < rows; i++)
+		{
+			var featadd = store.getAt(i);
+			var feature = featadd.get("feature");
+			addCityFeature(cities, feature);
+		}
+	}
+	scope: gridPanel
+	}
+});
+
+
+
+gridPanel.on('rowdblclick', function(g, rowIdx,r)
+{
+	rec = store.getAt(rowIdx);
+	var feature = rec.get("feature");
+	addCityFeature(cities, feature);
+	map.setCenter(new OpenLayers.LonLat(feature.geometry.x,feature.geometry.y), map.zoom); //center map to new feature
+});
+        
+searchPanel = new Ext.Panel(
+{
+    layout: "border",
+    region: "center",
+    height: 300,
+     width: 300,
+        autoScroll: true,
+    items: [formPanel,gridPanel]
+});
+
+ 
+winSearchLaunch= new Ext.Window({
+	id: 'winSearchLaunch',
+	width: 1150,
+	height: 320,
+	resizable: true,
+	maximizable: true,
+	minWidth: 350,
+	minHeight: 200,
+	title: 'Search',
+	layout: 'border',
+	listeners: {
+                    'hide': {
+                        fn: function (el, e) {
+                          try{
+       polyDrawSelect.deactivate();}
+       catch(e){}
+                        }
+                    },
+                    'deactivate':function()
+		{
+			winSearchLaunch.hide();
+		}
+                },
+
+	items: searchPanel,
+	closeAction:'hide' //otherwise closing the top will nerf the window
+	});
+	
+winSearchLaunch.addButton({
+      	  text: "Close",
+       handler:     function() {
+       try{
+       polyDrawSelect.deactivate();}
+       catch(e){}
+       		fn_hideWin(winSearchLaunch);
+       		}
+
+  
+  });
+  
+winSearchLaunch.on('close', function() {
+   try{
+       polyDrawSelect.deactivate();}
+       catch(e){}
+});
+  
+
+/******** End Search panel and functionality  ***************************************/
+
+
+
+
+/***********************************************************************************/
+/******** createPopup2 *************************************************************/
+/***********************************************************************************/
+//for the wms feature info
+
+function createPopup2(popuptext, popupanchor)
+{
+//we are going to use the popup text to generate a window that is like the main window, only without the ability to change anything. A user will be able to create an "interactive" feature with a button
+
+//very first, close the window if it happens to exist.
+
+fn_hideWin(winWms);
+
+fn_hideWin(popup);
+
+//clear the citiesTemp layer
+citiesTemp.removeAllFeatures();
+
+//first we are going to query the database for the pid. Since this is from a layer, the pid should be there. Perhaps an error checking mechanism should be put here to catch a weird instance if this is not the case
+
+//next we will reuse our popup to display the information we would like. We may have to separate the store and add a boleen object to the function to indicate the correct buttons that should be loaded on each iteration of the basic window.
+//at the same time there is a possibility for more than one feature. For testing we will use one: in the future this may be a grid or something like that to allow for more flexibility
+//yikes
+
+var textpid = String(popuptext);
+var wmsResultArray = textpid.split(',');
+//removes the last extra space from our template file which has a trailing comma, making a new json object we do not want
+wmsResultArray.pop();
+
+var jsontest = JSON.stringify(wmsResultArray);
+if (textpid.length > 2){
+
+var wmsStore = new GeoExt.data.FeatureStore({
+    reader: reader,
+    fields: fieldDefs,
+    autoLoad: false
+});
+
+
+var tempfeature;
+     Ext.Ajax.request({
+
+    url : 'gojson_wmsinfo.php',
+    method: 'GET',
+    params : {
+    json: jsontest
+    },
+    //if everything works add the features to a store that the user can choose from
+    success: function(objServerResponse){
+    try{
+    wmsStore.loadData(geojson_format.read(objServerResponse.responseText));
+         var rows = wmsStore.getCount();
+       for (var i = 0; i < rows; i++)
+       {
+       var featadd = wmsStore.getAt(i);
+       var feature = featadd.get("feature");
+       tempfeature = feature; 
+       //     citiesTemp.addFeatures([feature]);
+         addCityFeature(citiesTemp, feature);
+    
+        }
+        rows = String(rows);
+        if (rows != '1'){
+    var newTextItemPl = rows.concat(" Results");}
+    
+    	else{
+    var newTextItemPl = rows.concat(" Result");}
+    }
+    catch(e)
+    {
+    var newTextItemPl ='0 Results';
+    }    
+    plTextItem.setText(newTextItemPl);
+    },
+    
+    failure : function(objServerResponse){ 
+    }
+});
+
+
+//finished with the request, now build a grid of features based off of the load on cities2
+//we will need a grid, a window, and a select action to generate a popup on whatever feature has been selected
+   
+   
+
+//put into grid
+
+gridWms = new Ext.grid.GridPanel({
+        width: 420,
+                columnLines: true,
+            buttonAlign :'left',
+                    	bbar:[ {xtype: 'tbfill'},
+    	plTextItem],  
+    forceFit: true,
+    region:"center",
+    store: wmsStore,
+     columns: [
+        {
+            header: "Pleiades Name",
+            width: 100,
+            dataIndex: "basename",
+            sortable: true
+            }, 
+            {
+            header: "Pleiades ID",
+            width: 100,
+            dataIndex: "pid",
+            sortable: true
+            },
+     {
+            header: "English Name",
+            width: 100,
+            dataIndex: "en_name",
+            sortable: true
+            }, 
+             {
+            header: "Type",
+            width: 100,
+            dataIndex: "featuretyp",
+            sortable: true
+            }/*,
+            {
+            header: "Time Period",
+            width: 100,
+            dataIndex: "timeperiod",
+            sortable: true
+            },
+             {
+            header: "Greek Name",
+            width: 100,
+            dataIndex: "gr_name",
+            sortable: true
+            }, 
+            {
+            header: "Latin Name",
+            width: 100,
+            dataIndex: "la_name",
+            sortable: true
+            }*/
+            ],
+    sm: new GeoExt.grid.FeatureSelectionModel()
+        
+});
+
+
+       //     gridWms.on('rowdblclick', function(){
+       gridWms.on('rowclick', function(){
+            fn_hideWin(popup);
+            gridWms.getSelectionModel().each(function(rec){
+            var feature = rec.get("feature");
+           createPopup(feature, cities, true, 2);
+
+});
+     });
+
+
+//display grid
+
+        winWmsCounter++;
+
+    
+
+
+       var winWmsCounterName ='winWmsCounter_'+ winWmsCounter;
+	        
+winWms= new GeoExt.Popup({
+	                  id: winWmsCounterName,
+	                  title: "Pleiades Results. Click for more information or to add a feature to the map.",
+	                  width: 430,
+	                  height: 300,
+	                  location: popupanchor,
+	                  map: mapPanel,
+	                  layout: 'fit',
+	                  items: gridWms,
+	                  closeAction:'hide'
+	                });	
+/*
+//at the moment this destroys the popup functionality because it is not catching something - possibly a bad value somewhere. 
+//give the potential to add all the results to the map if desired
+winWms.addButton({
+    	  text: "Add All Results To Map",
+       handler: function() {
+       var rows = gridWms.getStore().getCount( );
+       for (var i = 0; i < rows; i++)
+       {
+       var featadd = wmsStore.getAt(i);
+       var feature = featadd.get("feature");
+      //      cities.addFeatures([feature]);  
+               addCityFeature(cities, feature);
+
+        }}
+});	                
+
+*/	                
+winWms.addButton(
+{
+	text: "Close",
+	handler: function()
+	{
+	fn_hideWin(winWms);
+	}
+}); 
+
+
+winWms.show();
+}
+}
+
+/******* End of createPopup2 *******************************************************/
+
+
+
+
+/***********************************************************************************/
+/******** Popup functionality begins here ******************************************/
+/***********************************************************************************/
+//Panels that will house all of the different information, including the holder tab
+var explorePanel = new Ext.Panel({
+    id: 'explorePanel',
+    title: "Explore Further",
+    bodyStyle: bodyStyler,
+       autoScroll:true   
+        }); 
+
+//now for the edit and info holder
+var popInfoPanel = new Ext.Panel({
+    id: 'popInfoPanel',
+    title: "Edit Information",
+       autoScroll:true   
+    }); 
+//tools
+var toolsPanel = new Ext.Panel({
+    id: 'toolsPanel',
+    title: "Tools",
+    bodyStyle: bodyStyler,
+       autoScroll:true   
+        }); 
+
+
+//sub panels that house changing components
+var delPanel = new Ext.Panel();
+var plPanel = new Ext.Panel();
+var spacePanel_p = new Ext.Panel();
+var pelagPanel  = new Ext.Panel();
+var pelagPanel2 = new Ext.Panel();
+var  pelagPanel  = new Ext.Panel();
+var wikiPanel = new Ext.Panel();
+var spacePanel2 = new Ext.Panel();
+var flickrPanel = new Ext.Panel();
+var spacePanel3 = new Ext.Panel();
+var spacePanel4 = new Ext.Panel();
+
+
+ 
+/******** Create popup function *********/
+/******** inputs ************************/
+/* 
+newFeature:
+TRUE = brand new feature that is not in the cities layer
+FALSE = Feature exists, so just display information
+
+displayClasser:
+1: Display all tabs (if possible)
+2: Exclude toolsPanel tab
+3: Only show the explorePanel tab
+
+****************************************/
+
+//somewhere the popups are nuking the custom name
+
+//actual function time
+function createPopup(feature, cities, newFeature, displayClasser) {
+//inputs:  
+
+var featurePleiades = false;
+
+if(!feature.attributes.pid.match(/-.*/) || feature.attributes.pid.match(/copy_of_.*/))
+{
+	featurePleiades = true;
+}
+  
+  //make sure the feature is set to the current one for editing. I may have to redesign this later
+  currentFeature = feature;
+  
+//first remove all the panels that could be hanging around
+
+ try{toolsPanel.remove(delPanel);}
+catch(e){}
+ try{   
+explorePanel.remove(plPanel);
+}
+catch(e)
+{
+}
+ try{
+explorePanel.remove(spacePanel_p);
+}
+catch(e)
+{
+}
+ try{
+explorePanel.remove(pelagPanel);
+}
+catch(e)
+{
+}
+ try{
+explorePanel.remove(spacePanel);
+}
+catch(e)
+{
+}
+ try{
+explorePanel.remove(wikiPanel);
+}
+catch(e)
+{
+}
+ try{
+explorePanel.remove(spacePanel2);
+}
+catch(e)
+{
+}
+ try{
+explorePanel.remove(flickrPanel);
+}
+catch(e)
+{
+}
+ try{
+explorePanel.remove(spacePanel3);
+}
+catch(e)
+{
+}
+
+   
+   //first the delete information panel
+if (newFeature == false)
+{
+   delPanel = new Ext.Panel({
+  //  id: 'delPanel',
+    border: false, 
+    frame : false,
+    bodyCssClass: 'x-panel-mc',
+    bodyStyle: bodyStyler,
+    html:''
+    }); 
+
+    delPanel.addButton({
+        	  text: "Delete Feature",
+    handler: function() {
+            cities.removeFeatures([feature]);
+            	fn_hideWin(popup);
+            }
+  
+});
+
+/*
+//now for the connections tool. This is an ajax call to another domain
+
+   pelagPanel2 = new Ext.Panel({
+  //  id: 'delPanel',
+    border: false, 
+    frame : false,
+    bodyCssClass: 'x-panel-mc',
+    bodyStyle: 'background-color:#FFFFFF;'
+    }); 
+
+    pelagPanel2.addButton({
+        	  text: "Pelag Test",
+    handler: function() {
+    
+     Ext.Ajax.request({
+
+    url : 'pelagios_neighbors.php',
+    method: 'GET',
+    params : {
+    pid: feature.attributes.pid
+    },
+    //if everything works add the features to a store that the user can choose from
+    success: function(objServerResponse){
+   
+   try {
+        JSON.parse(str);
+        alert('ok');
+    } catch (e) {
+    alert('bad');
+    }
+
+   
+   pelagJsonStore.loadData(geojson_format.read(objServerResponse.responseText));
+         var rows = pelagJsonStore.getCount();
+       for (var i = 0; i < rows; i++)
+       {
+       var featadd = pelagJsonStore.getAt(i);
+       var feature = featadd.get("feature");
+       connections_l.addFeatures([feature]);
+    //                       addCityFeature(names_l, feature);
+
+             
+        }
+    },
+    failure : function(objServerResponse){ 
+    }
+});
+    
+    }
+  
+});
+//strip out everything that is not needed in the source- we just want the pid
+for (var i = 0; i < connections_l.features.length; i++)
+{
+	connections_l.features[i].attributes.source =connections_l.features[i].attributes.source.replace("http://pleiades.stoa.org/places/","");
+}
+
+
+function displayPelagNeighbour(store)
+{
+
+
+gridNeighbour = new Ext.grid.GridPanel({
+    //title: "Results",
+    //height: 500,
+    //        buttonAlign :'left',
+    forceFit: true,
+  //  region:"center",
+         autoHeight: true,
+                 columnLines: true,
+    store: pelagJsonStore,
+     columns: [{
+            header: "Source",
+            width: 200,
+            dataIndex: "source",
+            sortable: true
+            }, 
+         {
+            header: "number_of_references",
+            width: 200,
+            dataIndex: "number_of_references",
+            sortable: true
+            },
+                 {
+            header: "in_number_of_datasets",
+            width: 200,
+            dataIndex: "in_number_of_datasets",
+            sortable: true
+            }, 
+             {
+            header: "weight",
+            width: 200,
+            dataIndex: "weight",
+            sortable: true
+            }
+            ]        
+});
+
+
+//display grid
+
+
+ var neighbourPanel = new Ext.Panel({
+  //  id: 'NamesPanel',
+    title: "Neighbors",
+    bodyStyle: 'background-color:#FFFFFF;',
+    frame: false,
+       autoScroll:true,
+       items: gridNeighbour   
+        });
+
+
+//window
+
+
+var nieghbourWindow= new Ext.Window({
+	id: 'nieghbourWindow',
+	width: 850,
+	height: 300,
+	resizable: true,
+	maximizable: true,
+	minWidth: 350,
+	minHeight: 200,
+	title: 'Map Gazetteer',
+	layout: 'border',
+	items: neighbourPanel,
+	closeAction:'hide' //otherwise closing the top will nerf the window
+	});
+
+  nieghbourWindow.addButton({
+      	  text: "Close",
+       handler:     function() {
+       fn_hideWin(nieghbourWindow);
+}
+
+  
+  }); 
+  
+    
+  nieghbourWindow.show();     
+
+
+}
+*/
+
+
+//pelagApiNeighbourhood
+//var spacePanel3 = new Ext.Panel();
+//var pelagPanel2 = new Ext.Panel();
+
+
+toolsPanel.add(delPanel);   
+toolsPanel.add(pelagPanel2);   
+
+}
+
+
+/*
+if(newFeature == true)
+{
+feature.attributes.path ='';
+}
+*/
+//gets any values that we should be using
+if(feature.attributes.en_name == null){feature.attributes.en_name = '';}
+if(feature.attributes.gr_name == null){feature.attributes.gr_name = '';}
+if(feature.attributes.la_name == null){feature.attributes.la_name = '';}
+if(feature.attributes.featuretyp == null){feature.attributes.featuretyp = 'unknown';}
+if(feature.attributes.timeperiod == null){feature.attributes.timeperiod = 'ACHRL(*****)';}
+if(feature.attributes.perseus_li == null){feature.attributes.perseus_li = '';}
+if(feature.attributes.wiki_link == null){feature.attributes.wiki_link = '';}
+if(feature.attributes.basename == null){feature.attributes.basename = '';}
+if(feature.attributes.custom_name == null){feature.attributes.custom_name = '';}
+
+
+//set the edit form with the feature information
+
+
+formPanelEdit.getForm().setValues({
+editformenName:feature.attributes.en_name,
+editformgrName: feature.attributes.gr_name,
+editformlaName: feature.attributes.la_name,
+editformType: feature.attributes.featuretyp,
+editformTime: feature.attributes.timeperiod,
+editformPid: feature.attributes.pid,
+editformPers: feature.attributes.perseus_li,
+editformWiki: feature.attributes.wiki_link,
+editformSearchName: feature.attributes.basename,
+editformCustomName: feature.attributes.custom_name,
+editlong:feature.geometry.x, 
+editlat:feature.geometry.y });
+
+   
+   popInfoPanel.add(formPanelEdit);
+       //setup the URL for pelagios, pleiades, and the button. Every basic feature will have this but added ones (with a negative pid) will not.
+   //catching also the features that are copies
+   if(featurePleiades == true){
+   
+//this is a hack
+
+
+var nameDefs =[
+			{name: 'name', type: 'string'},
+            {name: 'language', type: 'string'}
+            ];
+
+var nameReader = new GeoExt.data.FeatureReader({},nameDefs);
+
+
+
+
+var nameStore = new GeoExt.data.FeatureStore({
+    reader: nameReader,
+    fields: nameDefs,
+    autoLoad: false
+});
+    
+        names_l.removeAllFeatures();
+
+     Ext.Ajax.request({
+
+    url : 'name_return.php',
+    method: 'GET',
+    params : {
+    pid: feature.attributes.pid
+    },
+    //if everything works add the features to a store that the user can choose from
+    success: function(objServerResponse){
+    nameStore.loadData(geojson_format.read(objServerResponse.responseText));
+         var rows = nameStore.getCount();
+       for (var i = 0; i < rows; i++)
+       {
+       var featadd = nameStore.getAt(i);
+       var feature = featadd.get("feature");
+        //    names_l.addFeatures([feature]);
+                           addCityFeature(names_l, feature);
+
+             
+        } 
+    },
+    failure : function(objServerResponse){ 
+    }
+});
+   
+   
+//put into grid
+
+gridName = new Ext.grid.GridPanel({
+    title: "Double clicking any name will set that name as the custom name for the feature. Click OK to save that name.",
+    //height: 500,
+    //        buttonAlign :'left',
+    forceFit: true,
+  //  region:"center",
+         autoHeight: true,
+                 columnLines: true,
+    store: nameStore,
+     columns: [{
+            header: "Name",
+            width: 200,
+            dataIndex: "name",
+            sortable: true
+            }, 
+           {
+            header: "Language",
+           // width: 100,
+               flex: 1,
+            dataIndex: "language",
+            sortable: true
+            }
+            ],
+                sm: new GeoExt.grid.FeatureSelectionModel()
+                });
+
+
+
+
+	gridName.on('rowdblclick', function()
+	{
+		gridName.getSelectionModel().each(function(rec)
+		{
+			var feature = rec.get("feature");
+			currentFeature.attributes.custom_name = feature.attributes.name;
+			//not sure if this is necessary, but it will ensure the form has the correct values
+			formPanelEdit.getForm().setValues({
+			editformCustomName: currentFeature.attributes.custom_name});
+
+        });
+    });
+
+
+
+//display grid
+
+
+ var NamesPanel = new Ext.Panel(
+ {
+ 	title: "Names",
+    bodyStyle: bodyStyler,
+    frame: false,
+    autoScroll:true,
+    items: gridName
+});
+    /*    
+NamesPanel.addButton(
+{
+	text: 'Export',
+    handler: function() {
+    
+ var geoJSON = new OpenLayers.Format.GeoJSON();
+ var geoJSONText = geoJSON.write(names_l.features);
+var geoJSONTextEscape = encodeURI(geoJSONText);
+
+
+var body = Ext.getBody();
+var frame = body.createChild({
+    tag: 'iframe',
+    cls: 'x-hidden',
+    id: 'hidden_iframe',
+    name: 'hidden_iframe'
+});
+
+var form = body.createChild({
+    tag: 'form',
+    cls: 'x-hidden',
+    id: 'hidden_form',
+    method: 'post',
+    action: 'grid_out.php',
+    target: '_blank'
+});
+
+var input = form.createChild({
+    tag: 'input',
+    cls: 'x-hidden',
+    id: 'hidden_input',
+    name: 'jsondata',
+    type: 'hidden',
+    value: geoJSONText
+});
+
+form.dom.submit();
+
+
+    }
+});
+*/
+var pelagUrl = pelagApi.concat(feature.attributes.pid);
+var pleaUrl = pleaBase.concat(feature.attributes.pid);
+
+
+plPanel = new Ext.Panel({
+   // id: 'plPanel',
+    border: false, 
+    frame : false,
+    bodyCssClass: 'x-panel-mc',
+    bodyStyle: bodyStylerText,
+    items:[{    
+    html: " Clicking the button below will take you to the Pleiades page for " + feature.attributes.basename +"."
+} 
+    ]
+    }); 
+    
+    
+    plPanel.addButton({
+    text: 'Pleiades',
+    handler: function() {
+    window.open(pleaUrl);
+           }
+});
+
+    
+
+ 
+    spacePanel_p = new Ext.Panel({
+   // id: 'spacePanel_p',
+    border: false, 
+    frame : false,
+    bodyCssClass: 'x-panel-mc',
+    bodyStyle: bodyStyler,
+    items:[{
+    html: "<br>"
+    } 
+    ]
+    }); 
+ 
+explorePanel.add(plPanel);
+explorePanel.add(spacePanel_p);
+
+
+
+
+
+
+pelagPanel = new Ext.Panel({
+//    id: 'pelagPanel',
+    border: false, 
+    frame : false,
+    bodyCssClass: 'x-panel-mc',
+    bodyStyle: bodyStylerText,
+    items:[{    
+    html: " Clicking the button below will take you to a page that lists all the instances of " + feature.attributes.basename + " in the Pelagios linked data network."
+} 
+    ]
+    }); 
+    
+    
+    pelagPanel.addButton({
+    text: 'Pelagios',
+    handler: function() {
+    window.open(pelagUrl);
+           }
+});
+
+    
+
+ 
+spacePanel = new Ext.Panel({
+  //  id: 'spacePanel',
+    border: false, 
+    frame : false,
+    bodyCssClass: 'x-panel-mc',
+    bodyStyle: bodyStyler,
+    items:[{
+    html: "<br>"
+    } 
+    ]
+    }); 
+ 
+explorePanel.add(pelagPanel);
+explorePanel.add(spacePanel);
+
+
+//flickr. For now we are not checking if the resource exists
+
+    var flickrFinal = flickrUrl.concat(feature.attributes.pid);
+
+
+
+    flickrPanel = new Ext.Panel({
+ //   id: 'flickrPanel',
+    border: false, 
+    frame : false,
+    bodyCssClass: 'x-panel-mc',
+    bodyStyle: bodyStylerText,
+    items:[{    
+    html: "This button takes you to any Flickr pages tagged with the Pleiades ID for " + feature.attributes.basename + "."
+} 
+    ]
+    }); 
+    
+    
+    flickrPanel.addButton({
+    text: 'Flickr',
+    handler: function() {
+    window.open(flickrFinal);
+           }
+});
+
+
+spacePanel3 = new Ext.Panel({
+//   id: 'spacePanel3',
+   border: false, 
+   frame : false,
+   bodyCssClass: 'x-panel-mc',
+   bodyStyle: bodyStyler,
+   items:[{
+   html: "<br>"
+   }]
+   }); 
+
+explorePanel.add(flickrPanel);
+explorePanel.add(spacePanel3);
+
+
+}
+   
+//see if there is a wiki link for the feature in question. If so, create a button and add it to the external buttons tab
+
+   if (feature.attributes.wiki_link)
+   {
+      wikiPanel = new Ext.Panel({
+     //id: 'wikiPanel',
+     border: false, 
+     frame : false,
+     bodyCssClass: 'x-panel-mc',
+     bodyStyle: bodyStylerText,
+     items:[{
+     html:" This button will take you to Wikipedia entry for " + feature.attributes.basename +"."
+     }]
+     }); 
+    
+    
+    wikiPanel.addButton({
+    text: 'Wikipedia',
+    handler: function() {
+    window.open(feature.attributes.wiki_link);
+    }
+});
+
+    
+ 
+    spacePanel2 = new Ext.Panel({
+  // id: 'spacePanel2',
+   border: false, 
+   frame : false,
+   bodyCssClass: 'x-panel-mc',
+   bodyStyle: bodyStyler,
+   items:[{
+   html: "<br>"
+   }]
+   }); 
+
+explorePanel.add(wikiPanel);
+explorePanel.add(spacePanel2);
+
+    }
+    
+
+
+
+//we want the default tab to show feature information
+
+        
+
+var citytab = new Ext.TabPanel({
+   region:'center',
+   deferredRender:false,
+   buttonAlign: 'left',
+   activeTab:0,
+   autoScroll:true,
+       frame: false,
+        border: '0 0 0 0',
+   height: 300
+  // items:[popInfoPanel,NamesPanel,explorePanel,toolsPanel]  
+   });
+
+//every popup has the display panel
+if(popInfoPanel){
+citytab.add(popInfoPanel);
+}
+
+if (displayClasser != 3)
+{
+
+if(NamesPanel){
+citytab.add(NamesPanel);
+}
+if(explorePanel){
+if(featurePleiades == true)
+{
+citytab.add(explorePanel);
+}
+}
+}
+
+if (displayClasser == 1)
+{
+//no reason to display tools for features that are not interactive
+if(toolsPanel){
+if (newFeature == false)
+{
+citytab.add(toolsPanel);
+}
+}
+}    
+
+popcounter++;
+
+var popCounterName ='popCounterName'+ popcounter;
+
+
+popup = new GeoExt.Popup({
+            title: feature.attributes.basename,
+            id: popCounterName,
+            location: feature,
+            width:340,
+            height:380,
+            map: mapPanel,
+            maximizable: true,
+            collapsible: true,
+            closeAction:'hide',
+           // html: pelagUrl
+            items: citytab,
+                keys: [
+    { key: [Ext.EventObject.ENTER], handler: fn_submitForm }]
+        });
+       
+var popup_ok_button = new Ext.Button({
+    text: "Ok",
+    handler: function()
+    {
+    	fn_editsubmitForm(feature);
+    	fn_hideWin(popup);
+    }
+});    
+
+if (newFeature == false)
+{
+popup.addButton(popup_ok_button);        
+}
+
+
+   
+var popup_close_button = new        
+    Ext.Button({
+    	  text: "Close / Cancel",
+       handler:     function() {
+       try{
+       selectCtrl.unselect(feature);
+       }
+       catch(e){}
+                   	fn_hideWin(popup);
+                   	}
+});
+
+popup.addButton(popup_close_button);        
+
+
+if (newFeature == 1)
+{
+
+var featuresChecker = 0;
+
+        for (var i = 0; i < cities.features.length; i++)
+        {
+        if (cities.features[i].attributes.pid == feature.attributes.pid)
+        {
+        featuresChecker = 1;
+        break;
+        }
+       
+        }
+
+if (featuresChecker == 0)
+{
+//do not add the button if it is a custom feature
+if (!feature.attributes.pid.match(/-.*/)){
+var adderButton = new Ext.Button({
+text: "Make Interactive Feature",
+    handler: function() {
+    //perhaps this is the same problem we were having earlier
+   // cities.addFeatures([feature]); 
+                               		
+    addCityFeature(cities, feature);
+    cities.removeFeatures([feature]);  
+ 
+    fn_editsubmitForm(feature);
+    			createPopup(feature, cities, false, 1);
+       //get rid of extraneous buttons. We need to destroy the close button so the feature is forced onto the map
+       //actually, let us force an add feature here
+       adderButton.destroy();
+       popup_close_button.destroy();
+}
+    });   
+   popup.addButton(adderButton);     
+   }   
+}
+
+
+
+}
+
+        // unselect feature when the popup
+        // is closed
+        
+         popup.on({
+            close: function() {
+                if(OpenLayers.Util.indexOf(cities.selectedFeatures,
+                                           this.feature) > -1) {
+                                           try{
+                    selectCtrl.unselect(this.feature);}
+                    catch(e){}
+                }
+            }
+        });
+        
+        
+
+        popup.show();
+ 
+  }      
+
+
+/***********************************************************************************/
+
+
+/***********************************************************************************/
+/******** Panel Displays ***********************************************************/
+/***********************************************************************************/
+ 
+//for the cultural data node
+var layerList = new GeoExt.tree.LayerContainer({
+    text: 'Physical Culture',
+    layerStore: mapPanel.layers,
+    leaf: false,
+    expanded: true,
+     loader: 
+     {
+        filter: function(record) 
+        {
+            return record.get("layer").options.group =="culture"
+        }
+    }
+});
+
+//for the physical data node
+var layerList2 = new GeoExt.tree.LayerContainer({
+    text: 'Physical Data',
+    layerStore: mapPanel.layers,
+    leaf: false,
+    expanded: true,
+     loader: {
+        filter: function(record) 
+        {
+            return record.get("layer").options.group == "physical"
+        }
+    }
+});
+
+
+var layerList3 = new GeoExt.tree.LayerContainer({
+    text: 'Political Areas',
+    layerStore: mapPanel.layers,
+    leaf: false,
+    expanded: false,
+     loader: 
+     {
+        filter: function(record) 
+        {
+            return record.get("layer").options.group =="political"
+        }
+    }
+});
+
+var layerRoot = new Ext.tree.TreeNode(
+{
+text: "Layers",
+expanded: true
+}
+);
+
+
+var layerRoot_culture = new Ext.tree.TreeNode(
+{
+text: "Cultural Data",
+expanded: true
+}
+);
+
+layerRoot_culture.appendChild(layerList);
+layerRoot_culture.appendChild(layerList3);
+layerRoot.appendChild(layerRoot_culture);
+layerRoot.appendChild(layerList2);
+
+//put everything in the tree
+
+var layerTree = new Ext.tree.TreePanel({
+    title: 'Map Layers',
+    root: layerRoot,
+    enableDD: true,
+    width: 100,
+    height: 200,
+    autoScroll: true,
+    collapsible: true,
+    region: 'center'
+    });
+    
+    
+    //now for controls
+    
+    opacLayers.sort(function(a, b){
+ var nameA=a.name.toLowerCase(), nameB=b.name.toLowerCase()
+ if (nameA < nameB) //sort string ascending
+  return -1 
+ if (nameA > nameB)
+  return 1
+ return 0 //default return value (no sorting)
+})
+
+
+    
+    
+   var layerComboBox = new Ext.form.ComboBox({
+    mode: "local",
+       // editable: false,
+          triggerAction: "all",
+    store: new GeoExt.data.LayerStore({
+    layers: opacLayers
+    }),
+    listeners: {
+    scope: map, // or: this
+    select: function(combo,record){
+    opacitySlider.setLayer(record.getLayer())
+    }
+    },
+    displayField: 'title',
+    title: 'Layer'
+    });
+
+    
+  var spacePanel_foot = new Ext.Panel({
+   // id: 'spacePanel_p',
+    border: false, 
+    frame : false,
+    bodyCssClass: 'x-panel-mc',
+    bodyStyle: bodyStyler,
+    items:[{
+    html: "<br>"
+    } 
+    ]
+    }); 
+
+
+    
+  var opacTitle = new Ext.Panel({
+   // id: 'spacePanel_p',
+    border: false, 
+    frame : false,
+    bodyCssClass: 'x-panel-mc',
+    bodyStyle: bodyStyler,
+    items:[{
+    html: "Select a layer and use the slider to change opacity:"
+    } 
+    ]
+    });
+    
+  var opacPanel = new Ext.Panel({
+   // id: 'plPanel',
+    border: false, 
+    frame : false,
+    bodyCssClass: 'x-panel-mc',
+    bodyStyle: bodyStylerText,
+    items:[opacTitle, layerComboBox, opacitySlider,spacePanel_foot]
+    }); 
+    
+    
+ var mapControls = new Ext.Panel({
+ title:'Map Controls',
+ bodyStyle: bodyStyler,
+    height: 200,
+        autoScroll: true,
+    region: 'south',
+    collapsible: true,
+    buttonAlign: 'center',
+    items: opacPanel
+    });   
+    
+     
+var searchPanelButton  = new Ext.Button({
+    	  text: "Search For Features",
+       handler:     function() {
+    //clear the results store
+       store.removeAll();
+       //clear the form
+       	formPanel.getForm().setValues(
+    	{
+    		formName:"",
+    		formType:"",
+    		formTime:"",
+    		formPID:"",
+    		formGeom:""
+    	});
+    	//set the results status to 0 since nothing has been searched for yet
+    	var newTextItem ='0 Results';
+				myTextItem.setText(newTextItem);
+       winSearchLaunch.show();}
+});
+   
+var searchPanelTop = new Ext.Panel({
+    layout: 
+    {
+    	type: 'vbox',
+    	align: 'center',
+    	pack: 'center'                        
+    },
+       bodyCssClass: 'x-panel-mc',
+   bodyStyle: bodyStyler,
+    height: 80,
+    region: 'north',
+    title: 'Search',
+    collapsible: true,
+    buttonAlign: 'center',
+    items: searchPanelButton
+
+});
+/*
+var vecLegend = new  GeoExt.VectorLegend({
+clickableSymbol: false,
+clickableTitle: false,
+enableDD: true,
+rules: legendRules,
+width: 100,
+    height: 100,
+    region: 'center',
+        symbolType: "Point",
+            autoScroll: true
+
+});
+*/
+
+//legend panel
+
+  
+
+/*
+var legPanel = new Ext.Panel(
+{
+    title: 'Features Legend',
+layout: 'border',
+region: 'south',
+width: 100,
+    height: 250,
+collapsible: true,
+items:[vecLegend, legendPanel]
+}
+);
+*/
+
+//formatting panels below. This can be changed around for a different UI look if we want
+var rPanel = new Ext.Panel(
+{
+layout: 'border',
+region: 'east',
+width: 200,
+collapsible: true,
+//items:[searchPanelTop, layerTree, legPanel]
+items:[searchPanelTop, layerTree, mapControls]
+}
+);
+
+
+
+
+//put everything together here
+var mainWin = new Ext.Window({
+        title: "AWMC: À-la-carte Map",
+        id:'mainWin',
+             resizable: true,
+        maximizable: true,
+        constrain: true,
+        height: 700,
+        width: 1200,
+        //why close the application on its own page?
+        closable: false,
+        layout: "border",
+   // items: [mapPanel, vgridPanelBase, rPanel]
+   items: [mapPanel, rPanel],
+        keys: [
+    { key: [Ext.EventObject.ENTER], handler: function(){winSearchLaunch.show()} }]
+    });
+
+
+//hide the print
+    printExtent.addPage();
+		printExtent.hide();
+
+/***********************************************************************************/
+/*********** json input  ***********************************************************/
+/***********************************************************************************/
+//here because we should load everything that this depends on first and then place any features that are desired
+//this takes a json input from the php parameters (if applicable) and makes features on the map.
+//need to check if the php parameter exsists in php
+//also need to strip and refine the characters in another php function
+//maybe add another catch all on every php function after this to catch someone who passes bad json in somehow
+//there should always be more than 4 characters here
+//single quotes here. May have to do a string replace incase some singles snuck in here
+
+var readerJson = new GeoExt.data.FeatureReader({},fieldDefs);
+
+var storeJson = new GeoExt.data.FeatureStore({
+    reader: readerJson,
+    fields: fieldDefs,
+    autoLoad: false
+});
+
+try
+{
+	storeJson.removeAll();
+	storeJson.loadData(geojson_format.read('<?php echo $jsonGet ?>'));
+	var rows = String(storeJson.getCount());
+	for (var i = 0; i < rows; i++)
+       {
+       var featadd = storeJson.getAt(i);
+       var feature = featadd.get("feature");
+       //strip link here
+       if (feature.attributes.pid == null){
+           feature.attributes.pid = feature.attributes.link.replace(/[^0-9]/g, '');
+           }
+       //now use the feature.attributes
+       Ext.Ajax.request(
+		{
+			url : 'geojson2.php',
+			method: 'GET',
+			params : 
+			{
+				pid: feature.attributes.pid
+							},
+			//if everything works add the features to a store that the user can choose from
+			success: function(objServerResponse)
+			{
+				store.removeAll();
+				//we need to catch an error if the geojson returns but has no features
+				try
+				{
+					store.loadData(geojson_format.read(objServerResponse.responseText));
+					var rows2 = String(store.getCount());
+					for (var j = 0; j < rows2; j++)
+					{
+						var featadd2 = store.getAt(j);
+						var feature2 = featadd2.get("feature");
+						addCityFeature(cities, feature2);
+					}
+				}
+				catch(e)
+				{}
+			},
+		failure : function(objServerResponse)
+		{}
+	});
+       
+             
+        } 
+			
+				}
+				catch(e)
+				{
+				}
+try
+				{
+storeJson.removeAll();
+					storeJson.loadData(geojson_format.read('<?php echo $json ?>'));
+					var rows = String(storeJson.getCount());
+					       for (var i = 0; i < rows; i++)
+       {
+       var featadd = storeJson.getAt(i);
+       var feature = featadd.get("feature");
+       //strip link here
+       if (feature.attributes.pid == null){
+           feature.attributes.pid = feature.attributes.link.replace(/[^0-9]/g, '');
+           }
+       //now use the feature.attributes
+       Ext.Ajax.request(
+		{
+			url : 'geojson2.php',
+			method: 'GET',
+			params : 
+			{
+				pid: feature.attributes.pid
+							},
+			//if everything works add the features to a store that the user can choose from
+			success: function(objServerResponse)
+			{
+				store.removeAll();
+				//we need to catch an error if the geojson returns but has no features
+				try
+				{
+					store.loadData(geojson_format.read(objServerResponse.responseText));
+					var rows2 = String(store.getCount());
+					for (var j = 0; j < rows2; j++)
+					{
+						var featadd2 = store.getAt(j);
+						var feature2 = featadd2.get("feature");
+						addCityFeature(cities, feature2);
+					}
+				}
+				catch(e)
+				{}
+			},
+		failure : function(objServerResponse)
+		{}
+	});
+       
+             
+        } 
+			
+				}
+				catch(e)
+				{
+				}
+
+
+
+
+/***********************************************************************************/
+
+
+
+
+
+mainWin.show();
+//lets fill the screen so that all the controls are immediately visible
+mainWin.maximize();
+
+
+/******** End Panel Displays ********************************************************/
+    
+       
+//align the search window here
+
+var zoomFeature = new OpenLayers.Feature.Vector( new OpenLayers.Geometry.Point(33.9,47)); 
+map.setCenter(new OpenLayers.LonLat(zoomFeature.geometry.x,zoomFeature.geometry.y),1); //zoom map to new feature
+       //we are having a problem with a hidden grid- this seems to solve it
+try
+{
+	cities.addFeatures([zoomFeature]);
+	cities.removeFeatures([zoomFeature]);
+}
+catch(e){}
+
+}
+); 
+/************************************************************************************/
+/******** End Ext.onReady ***********************************************************/
+/************************************************************************************/
+
+/************************************************************************************/
+/******** End of javascript *********************************************************/
+/************************************************************************************/
+</script>
+
+
+</head>
+<body bgcolor="#333333">
+<!--This should never happen -->
+If You closed the map by mistake, simply hit the refresh button on your browser.
+</body>
+</html>	

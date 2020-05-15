@@ -1,0 +1,118 @@
+#===========================================================================
+# allowed DPIs
+#===========================================================================
+dpis:
+  - 1200
+  - 900
+  - 600
+  - 500
+  - 400
+  - 300
+  - 254
+  - 190
+  - 127
+  - 56
+
+#===========================================================================
+# allowed Formats
+#===========================================================================
+# '*' means any formats
+formats: ['*']
+
+#===========================================================================
+# the allowed scales
+#===========================================================================
+scales:
+  - 25000
+  - 50000
+  - 100000
+  - 200000
+  - 500000
+  - 1000000
+  - 2000000
+  - 4000000
+  - 8000000
+  - 16000000
+  - 32000000
+  - 64000000
+  - 128000000
+  - 256000000
+  - 512000000
+
+#===========================================================================
+# the list of allowed hosts
+#===========================================================================
+hosts:
+  - !localMatch
+    dummy: true
+  - !ipMatch
+    ip: www.camptocamp.org
+  - !dnsMatch
+    host: labs.metacarta.com
+    port: 80
+  - !dnsMatch
+    host: demo.mapfish.org
+    port: 80
+
+# the default fileName for the files downloaded from the servlet
+outputFilename: Antiquity À-la-carte
+
+layouts:
+  #===========================================================================
+  A4 portrait:
+  #===========================================================================
+    # override the default outputFileName defined above
+#    outputFilename: A4_Layout
+    mainPage:
+      rotation: true
+      pageSize: A4
+      header:
+        height: 40
+        items:
+          - !text
+            font: Helvetica
+            fontSize: 20
+            align: center
+            text: '${mapTitle}'
+      items:
+        - !map
+          spacingAfter: 2
+          width: 440
+          height: 483
+        - !columns
+          items:
+            - !scalebar
+              type: bar
+              units: km
+              maxSize: 100
+              barBgColor: white
+              fontSize: 8
+              align: left
+              vertAlign: middle
+            - !image
+              rotation: '${rotation}'
+              maxWidth: 60
+              maxHeight: 60
+              align: right
+              url: 'http://awmc.unc.edu/awmc/images/awmc_rose2.png'
+        - !text
+          font: Helvetica
+          fontSize: 10
+          text: '${comment}'
+          spacingAfter: 10 
+      footer:
+        height: 30
+        items:
+          - !columns
+            items:
+              - !text
+                #backgroundColor: #FF0000
+                align: left
+                font: Helvetica
+                fontSize: 10
+                text: © Ancient World Mapping Center. Released under CC BY-NC 3.0.
+              - !image
+                maxWidth: 44
+                maxHeight: 15
+                align: right
+                url: 'http://i.creativecommons.org/l/by-nc/3.0/88x31.png'

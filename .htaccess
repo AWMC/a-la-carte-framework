@@ -1,0 +1,5 @@
+DirectoryIndex carte.php
+RewriteEngine On
+RewriteRule ^jsonGet/([^/]+)/?$ carte.php?jsonGet=$1
+RewriteRule ^name/([^/]+)/?$ carte.php?name=$1
+RewriteRule ^pid/([^/]+)/?$ carte.php?pid=$1

@@ -1,0 +1,96 @@
+
+#permanent {
+    width: 20%;
+    float: left;
+    margin: 0px;
+    padding: 0px;
+    background: #C8D9F3;
+}
+
+        #permanent div {
+            margin: 0px;
+            padding: 6%;
+            border-bottom: white solid 1px;
+        }
+        
+        #permanent ul.simple {
+            margin: 0px;
+            padding: 0px;
+            text-indent: 0px;
+        }
+        
+        #permanent div div {
+            padding: 0px;
+            margin: 0px;
+            border-bottom: none;
+        }
+        
+        #permanent .smaller {
+            font-size: 0.9em;
+        }
+        
+        #permanent .smallest  {
+            font-size: 0.8em;
+        }
+        
+        #permanent .smaller ul.simple {
+            margin: 0px;
+            padding: 0px;
+            text-indent: 0px;
+        }
+        
+#features {
+    margin: 0px;
+    padding: 1em;
+    padding-left: 22%;
+    background: white;
+}
+
+        #features div {
+            margin: 0px;
+            padding: 1%;
+            padding-left: 0px;
+        }
+
+
+        #features h3 {
+            border-bottom: 1px solid black;
+
+        }
+
+
+h3 {
+    border-bottom: solid black 1px;
+}
+
+h3 a, h3 a:link, h3 a:visited {
+   color: black;
+   text-decoration: none;
+}
+
+h3 a:hover {
+   color: #036;
+}
+
+
+h3 a:active {
+   color: #CC3333;
+}
+
+#permanent #permanent a:link, #permanent a:visited {
+    color: #003366;
+    text-decoration: underline;
+}
+
+#permanent a:hover {
+   text-decoration: none;
+}
+
+#permanent a:active {
+   color: #CC3333;
+
+}
+
+.illustration-chip, .illustration-thumbnail-landscape, .illustration-thumbnail-portrait, .illustration-small-landscape, .illustration-small-portrait, .illustration-medium-landscape, .illustration-medium-portrait  {
+    clear: none;
+}
